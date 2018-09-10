@@ -6,3 +6,4 @@ authors = ["Josh Matthews <josh@joshmatthews.net>"]
 [dependencies]
 libmzx = { path = "../libmzx" }
 sdl2 = "0.31"
+time = "0.1"

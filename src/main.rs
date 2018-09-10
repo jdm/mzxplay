@@ -1,5 +1,6 @@
 extern crate libmzx;
 extern crate sdl2;
+extern crate time;
 
 use libmzx::{Renderer, render, load_world, CardinalDirection, Coordinate, Board};
 use sdl2::event::Event;
@@ -173,6 +174,7 @@ fn run(world_path: &Path) {
     };
 
     'mainloop: loop {
+        let start = time::precise_time_ns();
         for event in events.poll_iter() {
             match event {
                 Event::Quit{..} |
@@ -197,7 +199,10 @@ fn run(world_path: &Path) {
             render(&world.state, &world.boards[BOARD_ID], &world.board_robots[BOARD_ID], &mut renderer);
         }
         canvas.present();
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+        let now = time::precise_time_ns();
+        let _elapsed = now - start;
+        const IDEAL: u32 = 1_000_000_000u32 / 60;
+        ::std::thread::sleep(Duration::new(0, IDEAL));
     }
 }
 
