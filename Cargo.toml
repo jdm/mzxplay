@@ -1,0 +1,8 @@
+[package]
+name = "mzxplay"
+version = "0.1.0"
+authors = ["Josh Matthews <josh@joshmatthews.net>"]
+
+[dependencies]
+libmzx = { path = "../libmzx" }
+sdl2 = "0.31"
