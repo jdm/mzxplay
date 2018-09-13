@@ -2,7 +2,9 @@ extern crate libmzx;
 extern crate sdl2;
 extern crate time;
 
-use libmzx::{Renderer, render, load_world, CardinalDirection, Coordinate, Board};
+use libmzx::{
+    Renderer, render, load_world, CardinalDirection, Coordinate, Board
+};
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
 //use sdl2::mouse::Cursor;
@@ -148,7 +150,7 @@ fn run(world_path: &Path) {
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
-    let window = video_subsystem.window("revenge of megazeux", 800, 600)
+    let window = video_subsystem.window("revenge of megazeux", 640, 480)
       .position_centered()
       .build()
       .unwrap();
@@ -173,6 +175,8 @@ fn run(world_path: &Path) {
         _to_process: None,
     };
 
+    let (mut scrollx, mut scrolly) = (0, 0);
+
     'mainloop: loop {
         let start = time::precise_time_ns();
         for event in events.poll_iter() {
@@ -196,7 +200,17 @@ fn run(world_path: &Path) {
             let mut renderer = SdlRenderer {
                 canvas: &mut canvas,
             };
-            render(&world.state, &world.boards[BOARD_ID], &world.board_robots[BOARD_ID], &mut renderer);
+            render(
+                &world.state,
+                (
+                    world.boards[BOARD_ID].upper_left_viewport,
+                    world.boards[BOARD_ID].viewport_size,
+                ),
+                Coordinate(scrollx, scrolly),
+                &world.boards[BOARD_ID],
+                &world.board_robots[BOARD_ID],
+                &mut renderer
+            );
         }
         canvas.present();
         let now = time::precise_time_ns();
