@@ -1,10 +1,15 @@
+extern crate env_logger;
 extern crate libmzx;
+#[macro_use] extern crate log;
+extern crate num_traits;
 extern crate sdl2;
 extern crate time;
 
 use libmzx::{
-    Renderer, render, load_world, CardinalDirection, Coordinate, Board
+    Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Command, Thing,
+    WorldState, Counters, Resolve, Direction, Operator
 };
+use num_traits::{FromPrimitive, ToPrimitive};
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
 //use sdl2::mouse::Cursor;
@@ -127,6 +132,141 @@ fn process_input(
     None
 }
 
+fn update_robot(
+    _state: &mut WorldState,
+    counters: &mut Counters,
+    board: &mut Board,
+    robot: &mut Robot
+) {
+    debug!("executing {:?}", robot.name);
+    const CYCLES: u8 = 20;
+    loop {
+        if robot.cycle_count >= CYCLES ||
+            robot.current_line as usize >= robot.program.len()
+        {
+            break;
+        }
+        let mut advance = true;
+        let cmd = &robot.program[robot.current_line as usize];
+        debug!("evaluating {:?} ({})", cmd, robot.current_line);
+
+        match *cmd {
+            Command::End => advance = false,
+
+            Command::Die => {
+                let level = &mut board.level[
+                    (robot.position.1 * board.width as u16 + robot.position.0) as usize
+                ];
+                level.0 = Thing::Space.to_u8().unwrap();
+                level.1 = 0x07;
+                level.2 = 0x00;
+            }
+
+            Command::Wait(ref n) => {
+                if robot.current_loc > 0 {
+                    robot.current_loc -= 1;
+                } else {
+                    robot.current_loc = n.resolve(counters) as u8;
+                }
+                advance = robot.current_loc == 0;
+            }
+
+            Command::ScrollView(ref dir, ref n) => {
+                let n = n.resolve(counters);
+                match dir.dir {
+                    Direction::West => if board.scroll_offset.0 < n {
+                        board.scroll_offset.0 = 0;
+                    } else {
+                        board.scroll_offset.0 -= n;
+                    },
+                    Direction::East => if (board.scroll_offset.0 + n) as usize > board.width - board.viewport_size.0 as usize {
+                        board.scroll_offset.0 = board.width as u16 - board.viewport_size.0 as u16;
+                    } else {
+                        board.scroll_offset.0 += n;
+                    },
+                    Direction::North => if board.scroll_offset.1 < n {
+                        board.scroll_offset.1 = 0;
+                    } else {
+                        board.scroll_offset.1 -= n;
+                    },
+                    Direction::South => if (board.scroll_offset.1 + n) as usize > board.height - board.viewport_size.1 as usize {
+                        board.scroll_offset.1 = board.height as u16 - board.viewport_size.1 as u16;
+                    } else {
+                        board.scroll_offset.1 += n;
+                    }
+                    _ => ()
+                };
+            }
+
+            Command::Set(ref s, ref n) => {
+                let val = n.resolve(counters) as i16;
+                counters.set(s.clone(), val);
+            }
+
+            Command::Dec(ref s, ref n) => {
+                let val = n.resolve(counters) as i16;
+                let initial = counters.get(s);
+                counters.set(s.clone(), initial - val);
+            }
+
+            Command::If(ref s, op, ref n, ref l) => {
+                let val = counters.get(s);
+                let cmp = n.resolve(counters) as i16;
+                let result = match op {
+                    Operator::Equals => val == cmp,
+                    Operator::NotEquals => val != cmp,
+                    Operator::LessThan => val < cmp,
+                    Operator::GreaterThan => val > cmp,
+                    Operator::LessThanEquals => val <= cmp,
+                    Operator::GreaterThanEquals => val >= cmp,
+                };
+                if result {
+                    let label_pos = robot
+                        .program[0..robot.current_line as usize]
+                        .iter()
+                        .rev()
+                        .position(|c| c == &Command::Label(l.clone()));
+                    if let Some(pos) = label_pos {
+                        robot.current_line -= pos as u16 + 1;
+                    }
+                }
+            }
+
+            _ => (),
+        }
+
+        if advance {
+            robot.current_line += 1;
+        }
+
+        robot.cycle_count += 1;
+
+        if cmd.is_cycle_ending() {
+            break;
+        }
+    }
+    robot.cycle_count = 0;
+}
+
+fn update_board(
+    state: &mut WorldState,
+    counters: &mut Counters,
+    board: &mut Board,
+    robots: &mut Vec<Robot>
+) {
+    for y in 0..board.height {
+        for x in 0..board.width {
+            let level_idx = y * board.width + x;
+            let thing = Thing::from_u8(board.level[level_idx].0).unwrap();
+            if thing == Thing::Robot || thing == Thing::RobotPushable {
+                // FIXME: Account for missing global robot
+                let robot_id = board.level[level_idx].2 - 1;
+                update_robot(state, counters, board, &mut robots[robot_id as usize]);
+            }
+        }
+    }
+}
+
 fn run(world_path: &Path) {
     let world_data = match File::open(&world_path) {
         Ok(mut file) => {
@@ -175,7 +315,7 @@ fn run(world_path: &Path) {
         _to_process: None,
     };
 
-    let (mut scrollx, mut scrolly) = (0, 0);
+    let mut counters = Counters::new();
 
     'mainloop: loop {
         let start = time::precise_time_ns();
@@ -195,6 +335,12 @@ fn run(world_path: &Path) {
         }
 
         let _result = process_input(&mut world.boards[BOARD_ID], &input_state);
+        update_board(
+            &mut world.state,
+            &mut counters,
+            &mut world.boards[BOARD_ID],
+            &mut world.board_robots[BOARD_ID]
+        );
 
         {
             let mut renderer = SdlRenderer {
@@ -206,7 +352,7 @@ fn run(world_path: &Path) {
                     world.boards[BOARD_ID].upper_left_viewport,
                     world.boards[BOARD_ID].viewport_size,
                 ),
-                Coordinate(scrollx, scrolly),
+                world.boards[BOARD_ID].scroll_offset,
                 &world.boards[BOARD_ID],
                 &world.board_robots[BOARD_ID],
                 &mut renderer
@@ -221,6 +367,7 @@ fn run(world_path: &Path) {
 }
 
 fn main() {
+    env_logger::init();
     let args: Vec<_> = env::args().collect();
     if args.len() < 2 {
         println!("Usage: cargo run /path/to/world.mzx")
