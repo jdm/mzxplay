@@ -148,10 +148,10 @@ fn update_robot(
             break;
         }
         let mut advance = true;
-        let cmd = &robot.program[robot.current_line as usize];
+        let cmd = robot.program[robot.current_line as usize].clone();
         debug!("evaluating {:?} ({})", cmd, robot.current_line);
 
-        match *cmd {
+        match cmd {
             Command::End => advance = false,
 
             Command::Die => {
@@ -223,12 +223,11 @@ fn update_robot(
                 };
                 if result {
                     let label_pos = robot
-                        .program[0..robot.current_line as usize]
+                        .program
                         .iter()
-                        .rev()
                         .position(|c| c == &Command::Label(l.clone()));
                     if let Some(pos) = label_pos {
-                        robot.current_line -= pos as u16 + 1;
+                        robot.current_line = pos as u16;
                     }
                 }
             }
@@ -259,6 +258,37 @@ fn update_robot(
                             ExtendedParam::Any => (),
                             ExtendedParam::Specific(p) => *param = p.0,
                         }
+                    }
+                }
+            }
+
+            Command::Color(ref c) => {
+                board.level_at_mut(&robot.position).1 = c.resolve(counters).0;
+            }
+
+            Command::Char(ref c) => {
+                robot.ch = c.resolve(counters);
+            }
+
+            Command::Goto(ref l) => {
+                let label_pos = robot
+                    .program
+                    .iter()
+                    .position(|c| c == &Command::Label(l.clone()));
+                if let Some(pos) = label_pos {
+                    robot.current_line = pos as u16;
+                }
+            }
+
+            Command::Zap(ref l, ref n) => {
+                let n = n.resolve(counters);
+                for _ in 0..n {
+                    let label = robot
+                        .program
+                        .iter_mut()
+                        .find(|c| **c == Command::Label(l.clone()));
+                    if let Some(cmd) = label {
+                        *cmd = Command::ZappedLabel(l.clone());
                     }
                 }
             }
