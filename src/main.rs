@@ -7,7 +7,8 @@ extern crate time;
 
 use libmzx::{
     Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Command, Thing,
-    WorldState, Counters, Resolve, Direction, Operator
+    WorldState, Counters, Resolve, Direction, Operator, ExtendedColorValue, ExtendedParam,
+    ColorValue, ParamValue
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use sdl2::event::Event;
@@ -228,6 +229,36 @@ fn update_robot(
                         .position(|c| c == &Command::Label(l.clone()));
                     if let Some(pos) = label_pos {
                         robot.current_line -= pos as u16 + 1;
+                    }
+                }
+            }
+
+            Command::Change(ref c1, ref t1, ref p1, ref c2, ref t2, ref p2) => {
+                let c1 = c1.resolve(counters);
+                let c2 = c2.resolve(counters);
+                let p1 = p1.resolve(counters);
+                let p2 = p2.resolve(counters);
+                for &mut (ref mut id, ref mut color, ref mut param) in &mut board.level {
+                    if c1.matches(ColorValue(*color)) &&
+                        p1.matches(ParamValue(*param)) &&
+                        *t1 == Thing::from_u8(*id).unwrap()
+                    {
+                        match c2 {
+                            ExtendedColorValue::Known(c) =>
+                                *color = c.0,
+                            ExtendedColorValue::Unknown(Some(bg), None) =>
+                                *color = (*color & 0x0F) | (bg.0 << 4),
+                            ExtendedColorValue::Unknown(None, Some(fg)) =>
+                                *color = (*color & 0xF0) | fg.0,
+                            ExtendedColorValue::Unknown(None, None) => (),
+                            ExtendedColorValue::Unknown(Some(_), Some(_)) =>
+                                unreachable!(),
+                        }
+                        *id = t2.to_u8().unwrap();
+                        match p2 {
+                            ExtendedParam::Any => (),
+                            ExtendedParam::Specific(p) => *param = p.0,
+                        }
                     }
                 }
             }
