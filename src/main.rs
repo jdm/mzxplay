@@ -8,7 +8,7 @@ extern crate time;
 use libmzx::{
     Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Command, Thing,
     WorldState, Counters, Resolve, Direction, Operator, ExtendedColorValue, ExtendedParam,
-    ColorValue, ParamValue
+    ColorValue, ParamValue, CharId
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use sdl2::event::Event;
@@ -134,7 +134,7 @@ fn process_input(
 }
 
 fn update_robot(
-    _state: &mut WorldState,
+    state: &mut WorldState,
     counters: &mut Counters,
     board: &mut Board,
     robot: &mut Robot
@@ -170,6 +170,30 @@ fn update_robot(
                     robot.current_loc = n.resolve(counters) as u8;
                 }
                 advance = robot.current_loc == 0;
+            }
+
+            Command::PlayerChar(ref c) => {
+                let c = c.resolve(counters);
+                state.set_char_id(CharId::PlayerNorth, c);
+                state.set_char_id(CharId::PlayerSouth, c);
+                state.set_char_id(CharId::PlayerEast, c);
+                state.set_char_id(CharId::PlayerWest, c);
+            }
+
+            Command::PlayerCharDir(ref d, ref c) => {
+                let c = c.resolve(counters);
+                match d.dir {
+                    Direction::North => state.set_char_id(CharId::PlayerNorth, c),
+                    Direction::South => state.set_char_id(CharId::PlayerSouth, c),
+                    Direction::East => state.set_char_id(CharId::PlayerEast, c),
+                    Direction::West => state.set_char_id(CharId::PlayerWest, c),
+                    _ => (),
+                }
+            }
+
+            Command::PlayerColor(ref c) => {
+                let c = c.resolve(counters);
+                state.set_char_id(CharId::PlayerColor, c.0);
             }
 
             Command::ScrollView(ref dir, ref n) => {
@@ -366,6 +390,7 @@ fn run(world_path: &Path) {
     let mut events = sdl_context.event_pump().unwrap();
 
     const BOARD_ID: usize = 0;
+    let is_title_screen = BOARD_ID == 0;
 
     let mut input_state = InputState {
         left_pressed: false,
@@ -416,7 +441,8 @@ fn run(world_path: &Path) {
                 world.boards[BOARD_ID].scroll_offset,
                 &world.boards[BOARD_ID],
                 &world.board_robots[BOARD_ID],
-                &mut renderer
+                &mut renderer,
+                is_title_screen,
             );
         }
         canvas.present();
