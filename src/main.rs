@@ -137,26 +137,28 @@ fn update_robot(
     state: &mut WorldState,
     counters: &mut Counters,
     board: &mut Board,
-    robot: &mut Robot
+    robots: &mut [Robot],
+    robot_id: usize,
 ) {
-    debug!("executing {:?}", robot.name);
+    debug!("executing {:?}", robots[robot_id].name);
     const CYCLES: u8 = 20;
     loop {
-        if robot.cycle_count >= CYCLES ||
-            robot.current_line as usize >= robot.program.len()
+        if robots[robot_id].cycle_count >= CYCLES ||
+            robots[robot_id].current_line as usize >= robots[robot_id].program.len()
         {
             break;
         }
         let mut advance = true;
-        let cmd = robot.program[robot.current_line as usize].clone();
-        debug!("evaluating {:?} ({})", cmd, robot.current_line);
+        let cmd = robots[robot_id].program[robots[robot_id].current_line as usize].clone();
+        debug!("evaluating {:?} ({})", cmd, robots[robot_id].current_line);
 
         match cmd {
             Command::End => advance = false,
 
             Command::Die => {
+                let robot_pos = &robots[robot_id].position;
                 let level = &mut board.level[
-                    (robot.position.1 * board.width as u16 + robot.position.0) as usize
+                    (robot_pos.1 * board.width as u16 + robot_pos.0) as usize
                 ];
                 level.0 = Thing::Space.to_u8().unwrap();
                 level.1 = 0x07;
@@ -164,12 +166,12 @@ fn update_robot(
             }
 
             Command::Wait(ref n) => {
-                if robot.current_loc > 0 {
-                    robot.current_loc -= 1;
+                if robots[robot_id].current_loc > 0 {
+                    robots[robot_id].current_loc -= 1;
                 } else {
-                    robot.current_loc = n.resolve(counters) as u8;
+                    robots[robot_id].current_loc = n.resolve(counters) as u8;
                 }
-                advance = robot.current_loc == 0;
+                advance = robots[robot_id].current_loc == 0;
             }
 
             Command::PlayerChar(ref c) => {
@@ -246,12 +248,12 @@ fn update_robot(
                     Operator::GreaterThanEquals => val >= cmp,
                 };
                 if result {
-                    let label_pos = robot
+                    let label_pos = robots[robot_id]
                         .program
                         .iter()
                         .position(|c| c == &Command::Label(l.clone()));
                     if let Some(pos) = label_pos {
-                        robot.current_line = pos as u16;
+                        robots[robot_id].current_line = pos as u16;
                     }
                 }
             }
@@ -287,27 +289,27 @@ fn update_robot(
             }
 
             Command::Color(ref c) => {
-                board.level_at_mut(&robot.position).1 = c.resolve(counters).0;
+                board.level_at_mut(&robots[robot_id].position).1 = c.resolve(counters).0;
             }
 
             Command::Char(ref c) => {
-                robot.ch = c.resolve(counters);
+                robots[robot_id].ch = c.resolve(counters);
             }
 
             Command::Goto(ref l) => {
-                let label_pos = robot
+                let label_pos = robots[robot_id]
                     .program
                     .iter()
                     .position(|c| c == &Command::Label(l.clone()));
                 if let Some(pos) = label_pos {
-                    robot.current_line = pos as u16;
+                    robots[robot_id].current_line = pos as u16;
                 }
             }
 
             Command::Zap(ref l, ref n) => {
                 let n = n.resolve(counters);
                 for _ in 0..n {
-                    let label = robot
+                    let label = robots[robot_id]
                         .program
                         .iter_mut()
                         .find(|c| **c == Command::Label(l.clone()));
@@ -317,20 +319,33 @@ fn update_robot(
                 }
             }
 
+            Command::Send(ref r, ref l) => {
+                let robot = robots.iter_mut().find(|robot| robot.name == *r);
+                if let Some(robot) = robot {
+                    let label_pos = robot
+                        .program
+                        .iter()
+                        .position(|c| c == &Command::Label(l.clone()));
+                    if let Some(pos) = label_pos {
+                        robot.current_line = pos as u16;
+                    }
+                }
+            }
+
             _ => (),
         }
 
         if advance {
-            robot.current_line += 1;
+            robots[robot_id].current_line += 1;
         }
 
-        robot.cycle_count += 1;
+        robots[robot_id].cycle_count += 1;
 
         if cmd.is_cycle_ending() {
             break;
         }
     }
-    robot.cycle_count = 0;
+    robots[robot_id].cycle_count = 0;
 }
 
 fn update_board(
@@ -346,7 +361,7 @@ fn update_board(
             if thing == Thing::Robot || thing == Thing::RobotPushable {
                 // FIXME: Account for missing global robot
                 let robot_id = board.level[level_idx].2 - 1;
-                update_robot(state, counters, board, &mut robots[robot_id as usize]);
+                update_robot(state, counters, board, &mut *robots, robot_id as usize);
             }
         }
     }
