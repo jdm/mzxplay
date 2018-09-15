@@ -320,8 +320,10 @@ fn update_robot(
             }
 
             Command::Send(ref r, ref l) => {
-                let robot = robots.iter_mut().find(|robot| robot.name == *r);
-                if let Some(robot) = robot {
+                for robot in &mut *robots {
+                    if robot.name != *r {
+                        continue;
+                    }
                     let label_pos = robot
                         .program
                         .iter()
