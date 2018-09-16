@@ -8,7 +8,7 @@ extern crate time;
 use libmzx::{
     Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Command, Thing,
     WorldState, Counters, Resolve, Direction, Operator, ExtendedColorValue, ExtendedParam,
-    ColorValue, ParamValue, CharId
+    ColorValue, ParamValue, CharId, ByteString
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use sdl2::event::Event;
@@ -25,6 +25,8 @@ use std::io::Read;
 use std::path::Path;
 use std::process::exit;
 use std::time::Duration;
+
+//TODO: deal with sending a robot to a label while in the middle of a multi-cycle command
 
 struct SdlRenderer<'a> {
     canvas: &'a mut Canvas<Window>,
@@ -140,7 +142,15 @@ fn update_robot(
     robots: &mut [Robot],
     robot_id: usize,
 ) {
+    robots[robot_id].cycle_delay -= 1;
+    if robots[robot_id].cycle_delay > 0 {
+        debug!("delaying {:?}", robots[robot_id].name);
+        return;
+    }
+    robots[robot_id].cycle_delay = robots[robot_id].cycle;
+
     debug!("executing {:?}", robots[robot_id].name);
+
     const CYCLES: u8 = 20;
     loop {
         if robots[robot_id].cycle_count >= CYCLES ||
@@ -156,13 +166,8 @@ fn update_robot(
             Command::End => advance = false,
 
             Command::Die => {
-                let robot_pos = &robots[robot_id].position;
-                let level = &mut board.level[
-                    (robot_pos.1 * board.width as u16 + robot_pos.0) as usize
-                ];
-                level.0 = Thing::Space.to_u8().unwrap();
-                level.1 = 0x07;
-                level.2 = 0x00;
+                board.remove_thing_at(&robots[robot_id].position);
+                //TODO: actually remove the robot
             }
 
             Command::Wait(ref n) => {
@@ -248,13 +253,7 @@ fn update_robot(
                     Operator::GreaterThanEquals => val >= cmp,
                 };
                 if result {
-                    let label_pos = robots[robot_id]
-                        .program
-                        .iter()
-                        .position(|c| c == &Command::Label(l.clone()));
-                    if let Some(pos) = label_pos {
-                        robots[robot_id].current_line = pos as u16;
-                    }
+                    send_robot_to_label(&mut robots[robot_id], l);
                 }
             }
 
@@ -297,12 +296,8 @@ fn update_robot(
             }
 
             Command::Goto(ref l) => {
-                let label_pos = robots[robot_id]
-                    .program
-                    .iter()
-                    .position(|c| c == &Command::Label(l.clone()));
-                if let Some(pos) = label_pos {
-                    robots[robot_id].current_line = pos as u16;
+                if send_robot_to_label(&mut robots[robot_id], l) {
+                    advance = false;
                 }
             }
 
@@ -321,17 +316,60 @@ fn update_robot(
 
             Command::Send(ref r, ref l) => {
                 for robot in &mut *robots {
-                    if robot.name != *r {
-                        continue;
-                    }
-                    let label_pos = robot
-                        .program
-                        .iter()
-                        .position(|c| c == &Command::Label(l.clone()));
-                    if let Some(pos) = label_pos {
-                        robot.current_line = pos as u16;
+                    if r.as_ref() == b"all" || robot.name == *r {
+                        send_robot_to_label(robot, l);
                     }
                 }
+            }
+
+            Command::Walk(ref d) => {
+                //FIXME: support modified directions.
+                robots[robot_id].walk = d.dir;
+            }
+
+            Command::Slash(ref s) => {
+                if robots[robot_id].current_loc as usize == s.as_bytes().len() {
+                    robots[robot_id].current_loc = 0;
+                } else {
+                    let dir = match s.as_bytes()[robots[robot_id].current_loc as usize] {
+                        b'n' => Some(CardinalDirection::North),
+                        b's' => Some(CardinalDirection::South),
+                        b'e' => Some(CardinalDirection::East),
+                        b'w' => Some(CardinalDirection::West),
+                        _ => None,
+                    };
+                    if let Some(dir) = dir {
+                        move_robot(&mut robots[robot_id], board, dir);
+                    }
+                    robots[robot_id].current_loc += 1;
+                    advance = false;
+                }
+            }
+
+            Command::Go(ref d, ref n) => {
+                if robots[robot_id].current_loc > 0 {
+                    robots[robot_id].current_loc -= 1;
+                } else {
+                    robots[robot_id].current_loc = n.resolve(counters) as u8;
+                }
+                advance = robots[robot_id].current_loc == 0;
+                //FIXME: support modified directions.
+                let dir = match d.dir {
+                    Direction::North => Some(CardinalDirection::North),
+                    Direction::South => Some(CardinalDirection::South),
+                    Direction::East => Some(CardinalDirection::East),
+                    Direction::West => Some(CardinalDirection::West),
+                    _ => None,
+                };
+                if let Some(dir) = dir {
+                    move_robot(&mut robots[robot_id], board, dir);
+                }
+            }
+
+            Command::Cycle(ref n) => {
+                let n = (n.resolve(counters) % 256) as u8;
+                robots[robot_id].cycle_delay = n;
+                robots[robot_id].cycle = n;
             }
 
             _ => (),
@@ -343,11 +381,106 @@ fn update_robot(
 
         robots[robot_id].cycle_count += 1;
 
+        let dir = match robots[robot_id].walk {
+            Direction::Idle => None,
+            Direction::North => Some(CardinalDirection::North),
+            Direction::South => Some(CardinalDirection::South),
+            Direction::East => Some(CardinalDirection::East),
+            Direction::West => Some(CardinalDirection::West),
+            _ => None,
+        };
+
+        if let Some(dir) = dir {
+            move_robot(&mut robots[robot_id], board, dir);
+        }
+
         if cmd.is_cycle_ending() {
             break;
         }
     }
     robots[robot_id].cycle_count = 0;
+}
+
+enum BuiltInLabel {
+    Thud,
+    Edge,
+}
+
+impl Into<ByteString> for BuiltInLabel {
+    fn into(self) -> ByteString {
+        ByteString::from(match self {
+            BuiltInLabel::Thud => "thud",
+            BuiltInLabel::Edge => "edge",
+        })
+    }
+}
+
+fn send_robot_to_label<S: Into<ByteString>>(robot: &mut Robot, label: S) -> bool {
+    let label = label.into();
+    let label_pos = robot
+        .program
+        .iter()
+        .position(|c| c == &Command::Label(label.clone()));
+    if let Some(pos) = label_pos {
+        robot.current_line = pos as u16 + 1;
+        true
+    } else {
+        false
+    }
+}
+
+enum MoveResult {
+    Move(Coordinate<u16>),
+    Edge,
+}
+
+fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) {
+    let result = match dir {
+        CardinalDirection::North => {
+            if robot.position.1 == 0 {
+                MoveResult::Edge
+            } else {
+                MoveResult::Move(Coordinate(robot.position.0, robot.position.1 - 1))
+            }
+        }
+        CardinalDirection::South => {
+            if robot.position.1 as usize == board.height - 1 {
+                MoveResult::Edge
+            } else {
+                MoveResult::Move(Coordinate(robot.position.0, robot.position.1 + 1))
+            }
+        }
+        CardinalDirection::East => {
+            if robot.position.0 as usize == board.width - 1 {
+                MoveResult::Edge
+            } else {
+                MoveResult::Move(Coordinate(robot.position.0 + 1, robot.position.1))
+            }
+        }
+        CardinalDirection::West => {
+            if robot.position.0 == 0 {
+                MoveResult::Edge
+            } else {
+                MoveResult::Move(Coordinate(robot.position.0 - 1, robot.position.1))
+            }
+        }
+    };
+    match result {
+        MoveResult::Edge => {
+            if !send_robot_to_label(robot, BuiltInLabel::Edge) {
+                send_robot_to_label(robot, BuiltInLabel::Thud);
+            }
+        }
+        MoveResult::Move(new_pos) => {
+            let thing = board.thing_at(&new_pos);
+            if thing.is_solid() {
+                send_robot_to_label(robot, BuiltInLabel::Thud);
+            } else {
+                board.move_level_to(&robot.position, &new_pos);
+                robot.position = new_pos;
+            }
+        }
+    }
 }
 
 fn update_board(
