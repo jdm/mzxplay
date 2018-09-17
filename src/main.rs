@@ -147,8 +147,8 @@ fn update_robot(
         return;
     }
 
-    robots[robot_id].cycle_delay -= 1;
     if robots[robot_id].cycle_delay > 0 {
+        robots[robot_id].cycle_delay -= 1;
         debug!("delaying {:?}", robots[robot_id].name);
         return;
     }
@@ -156,7 +156,7 @@ fn update_robot(
 
     debug!("executing {:?}", robots[robot_id].name);
 
-    const CYCLES: u8 = 20;
+    const CYCLES: u8 = 40;
     loop {
         if robots[robot_id].cycle_count >= CYCLES ||
             robots[robot_id].current_line as usize >= robots[robot_id].program.len()
