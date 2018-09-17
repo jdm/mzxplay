@@ -2,13 +2,14 @@ extern crate env_logger;
 extern crate libmzx;
 #[macro_use] extern crate log;
 extern crate num_traits;
+extern crate rand;
 extern crate sdl2;
 extern crate time;
 
 use libmzx::{
     Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Command, Thing,
     WorldState, Counters, Resolve, Direction, Operator, ExtendedColorValue, ExtendedParam,
-    ColorValue, ParamValue, CharId, ByteString
+    ColorValue, ParamValue, CharId, ByteString, Explosion, ExplosionResult
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use sdl2::event::Event;
@@ -142,6 +143,10 @@ fn update_robot(
     robots: &mut [Robot],
     robot_id: usize,
 ) {
+    if !robots[robot_id].alive {
+        return;
+    }
+
     robots[robot_id].cycle_delay -= 1;
     if robots[robot_id].cycle_delay > 0 {
         debug!("delaying {:?}", robots[robot_id].name);
@@ -167,7 +172,7 @@ fn update_robot(
 
             Command::Die => {
                 board.remove_thing_at(&robots[robot_id].position);
-                //TODO: actually remove the robot
+                robots[robot_id].alive = false;
             }
 
             Command::Wait(ref n) => {
@@ -372,6 +377,16 @@ fn update_robot(
                 robots[robot_id].cycle = n;
             }
 
+            Command::Explode(ref n) => {
+                robots[robot_id].alive = false;
+                let n = n.resolve(counters) as u8;
+                let &mut (ref mut id, ref mut c, ref mut param) =
+                    board.level_at_mut(&robots[robot_id].position);
+                *id = Thing::Explosion.to_u8().unwrap();
+                *c = state.char_id(CharId::ExplosionStage1);
+                *param = Explosion { stage: 0, size: n }.to_param();
+            }
+
             _ => (),
         }
 
@@ -404,6 +419,7 @@ fn update_robot(
 enum BuiltInLabel {
     Thud,
     Edge,
+    Bombed,
 }
 
 impl Into<ByteString> for BuiltInLabel {
@@ -411,6 +427,7 @@ impl Into<ByteString> for BuiltInLabel {
         ByteString::from(match self {
             BuiltInLabel::Thud => "thud",
             BuiltInLabel::Edge => "edge",
+            BuiltInLabel::Bombed => "bombed",
         })
     }
 }
@@ -493,10 +510,134 @@ fn update_board(
         for x in 0..board.width {
             let level_idx = y * board.width + x;
             let thing = Thing::from_u8(board.level[level_idx].0).unwrap();
-            if thing == Thing::Robot || thing == Thing::RobotPushable {
-                // FIXME: Account for missing global robot
-                let robot_id = board.level[level_idx].2 - 1;
-                update_robot(state, counters, board, &mut *robots, robot_id as usize);
+            match thing {
+                Thing::Robot | Thing::RobotPushable => {
+                    // FIXME: Account for missing global robot
+                    let robot_id = board.level[level_idx].2 - 1;
+                    update_robot(state, counters, board, &mut *robots, robot_id as usize);
+                }
+
+                Thing::Explosion => {
+                    let mut explosion = Explosion::from_param(board.level[level_idx].2);
+                    if explosion.stage == 0 {
+                        if explosion.size > 0 {
+                            explosion.size -= 1;
+                            board.level[level_idx].2 = explosion.to_param();
+
+                            let dirs = [
+                                (0i16, -1),
+                                (0, 1),
+                                (1, 0),
+                                (-1, 0),
+                            ];
+                            for &(xdiff, ydiff) in &dirs {
+                                if (y == 0 && ydiff < 0) ||
+                                    (x == 0 && xdiff < 0) ||
+                                    (y == board.height - 1 && ydiff > 0) ||
+                                    (x == board.width - 1  && xdiff > 0)
+                                {
+                                    continue;
+                                }
+                                let level_idx = (y as i16 + ydiff) as usize * board.width + (x as i16 + xdiff) as usize;
+                                let thing = Thing::from_u8(board.level[level_idx].0).unwrap();
+                                if !thing.is_solid() && thing != Thing::Explosion {
+                                    board.level[level_idx] = (
+                                        Thing::Explosion.to_u8().unwrap(),
+                                        0x00,
+                                        explosion.to_param(),
+                                    );
+                                } else if thing == Thing::Robot || thing == Thing::RobotPushable {
+                                    let robot_id = board.level[level_idx].2 - 1;
+                                    send_robot_to_label(&mut robots[robot_id as usize], BuiltInLabel::Bombed);
+                                }
+                            }
+                        }
+                    }
+
+                    if explosion.stage == 3 {
+                        board.level[level_idx] = match board.explosion_result {
+                            ExplosionResult::Nothing => (
+                                Thing::Space.to_u8().unwrap(),
+                                0x07,
+                                0x00
+                            ),
+                            ExplosionResult::Ash => (
+                                Thing::Floor.to_u8().unwrap(),
+                                0x08,
+                                0x00,
+                            ),
+                            ExplosionResult::Fire => (
+                                Thing::Fire.to_u8().unwrap(),
+                                0x0C,
+                                0x00,
+                            ),
+                        };
+                    } else {
+                        explosion.stage += 1;
+                        board.level[level_idx].2 = explosion.to_param();
+                    }
+                }
+
+                Thing::Fire => {
+                    if rand::random::<u8>() >= 20 {
+                        let cur_param = board.level[level_idx].2;
+                        if cur_param < 5 {
+                            board.level[level_idx].2 += 1;
+                        } else {
+                            board.level[level_idx].2 = 0;
+                        }
+                    }
+
+                    let rval = rand::random::<u8>();
+                    if rval < 8 {
+                        if rval == 1 && !board.fire_burns_forever {
+                            board.level[level_idx] = (
+                                Thing::Floor.to_u8().unwrap(),
+                                0x08,
+                                0x00,
+                            );
+                        }
+
+                        let dirs = [
+                            (0i16, -1),
+                            (0, 1),
+                            (1, 0),
+                            (-1, 0),
+                        ];
+                        for &(xdiff, ydiff) in &dirs {
+                            if (y == 0 && ydiff < 0) ||
+                                (x == 0 && xdiff < 0) ||
+                                (y == board.height - 1 && ydiff > 0) ||
+                                (x == board.width - 1  && xdiff > 0)
+                            {
+                                continue;
+                            }
+                            let level_idx = (y as i16 + ydiff) as usize * board.width + (x as i16 + xdiff) as usize;
+                            let thing_id = board.level[level_idx].0;
+                            let thing = Thing::from_u8(thing_id).unwrap();
+
+                            let spread =
+                                (thing == Thing::Space && board.fire_burns_space) ||
+                                (thing_id >= Thing::Fake.to_u8().unwrap() &&
+                                 thing_id <= Thing::ThickWeb.to_u8().unwrap() &&
+                                 board.fire_burns_fakes) ||
+                                (thing == Thing::Tree && board.fire_burns_trees) ||
+                                (board.level[level_idx].1 == 0x06 &&
+                                 board.fire_burns_brown &&
+                                 board.level[level_idx].0 < Thing::Sensor.to_u8().unwrap());
+
+                            if spread {
+                                board.level[level_idx] = (
+                                    Thing::Fire.to_u8().unwrap(),
+                                    0x0C,
+                                    0x00,
+                                );
+                            }
+                        }
+                    }
+                }
+
+                _ => (),
             }
         }
     }
