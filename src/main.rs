@@ -208,6 +208,29 @@ fn update_robot(
                 state.set_char_id(CharId::PlayerColor, c.0);
             }
 
+            Command::ResetView => {
+                let vwidth = board.viewport_size.0 as u16;
+                let vheight = board.viewport_size.1 as u16;
+
+                let xpos = if board.player_pos.0 < vwidth / 2 {
+                    0
+                } else if board.player_pos.0 > board.width as u16 - vwidth / 2 {
+                    board.width as u16 - vwidth
+                } else {
+                    board.player_pos.0 - vwidth / 2
+                };
+
+                let ypos = if board.player_pos.1 < vheight / 2 {
+                    0
+                } else if board.player_pos.1 > board.height as u16 - vheight / 2 {
+                    board.height as u16 - vheight
+                } else {
+                    board.player_pos.1 - vheight / 2
+                };
+
+                board.scroll_offset = Coordinate(xpos, ypos);
+            }
+
             Command::ScrollView(ref dir, ref n) => {
                 let n = n.resolve(counters);
                 match dir.dir {
