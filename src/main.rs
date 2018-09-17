@@ -281,7 +281,7 @@ fn update_robot(
                     Operator::GreaterThanEquals => val >= cmp,
                 };
                 if result {
-                    send_robot_to_label(&mut robots[robot_id], l);
+                    advance = !send_robot_to_label(&mut robots[robot_id], l);
                 }
             }
 
@@ -324,9 +324,7 @@ fn update_robot(
             }
 
             Command::Goto(ref l) => {
-                if send_robot_to_label(&mut robots[robot_id], l) {
-                    advance = false;
-                }
+                advance = !send_robot_to_label(&mut robots[robot_id], l);
             }
 
             Command::Zap(ref l, ref n) => {
@@ -343,9 +341,12 @@ fn update_robot(
             }
 
             Command::Send(ref r, ref l) => {
-                for robot in &mut *robots {
+                for (idx, robot) in robots.iter_mut().enumerate() {
                     if r.as_ref() == b"all" || robot.name == *r {
-                        send_robot_to_label(robot, l);
+                        let did_send = send_robot_to_label(robot, l);
+                        if idx == robot_id {
+                            advance = !did_send;
+                        }
                     }
                 }
             }
