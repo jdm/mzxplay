@@ -763,6 +763,7 @@ fn run(world_path: &Path) {
     let mut events = sdl_context.event_pump().unwrap();
 
     const BOARD_ID: usize = 0;
+    const GAME_SPEED: u64 = 3;
     let is_title_screen = BOARD_ID == 0;
 
     let mut input_state = InputState {
@@ -820,10 +821,13 @@ fn run(world_path: &Path) {
             );
         }
         canvas.present();
+
         let now = time::precise_time_ns();
-        let _elapsed = now - start;
-        const IDEAL: u32 = 1_000_000_000u32 / 60;
-        ::std::thread::sleep(Duration::new(0, IDEAL));
+        let elapsed_ms = (now - start) / 1_000_000;
+        let total_ticks = (16 * (GAME_SPEED - 1)).checked_sub(elapsed_ms);
+        if let Some(diff) = total_ticks {
+            ::std::thread::sleep(Duration::from_millis(diff));
+        }
     }
 }
 
