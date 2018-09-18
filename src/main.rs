@@ -271,6 +271,12 @@ fn update_robot(
                 board.scroll_offset = Coordinate(xpos, ypos);
             }
 
+            Command::ScrollViewXY(ref x, ref y) => {
+                let x = x.resolve(counters);
+                let y = y.resolve(counters);
+                board.scroll_offset = Coordinate(x as u16, y as u16);
+            }
+
             Command::ScrollView(ref dir, ref n) => {
                 let n = n.resolve(counters);
                 match dir.dir {
@@ -455,6 +461,13 @@ fn update_robot(
                 *c = state.char_id(CharId::ExplosionStage1);
                 *param = Explosion { stage: 0, size: n }.to_param();
             }
+
+            Command::OverlayMode(mode) => if let Some(ref mut overlay) = board.overlay {
+                overlay.0 = mode;
+            },
+
+            Command::Label(_) => lines_run -= 1,
+            Command::ZappedLabel(_) => lines_run -= 1,
 
             _ => (),
         }
