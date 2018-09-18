@@ -138,6 +138,7 @@ fn process_input(
 
 fn update_robot(
     state: &mut WorldState,
+    world_path: &Path,
     counters: &mut Counters,
     board: &mut Board,
     robots: &mut [Robot],
@@ -206,6 +207,38 @@ fn update_robot(
             Command::PlayerColor(ref c) => {
                 let c = c.resolve(counters);
                 state.set_char_id(CharId::PlayerColor, c.0);
+            }
+
+            Command::LoadCharSet(ref c) => {
+                let path = world_path.join(c.to_string());
+                match File::open(&path) {
+                    Ok(mut file) => {
+                        let mut v = vec![];
+                        file.read_to_end(&mut v).unwrap();
+                        state.charset.data.copy_from_slice(&v);
+                    }
+                    Err(e) => {
+                        info!("Error opening charset {} ({})", path.display(), e);
+                    }
+                }
+            }
+
+            Command::LoadPalette(ref p) => {
+                let path = world_path.join(p.to_string());
+                match File::open(&path) {
+                    Ok(mut file) => {
+                        let mut v = vec![];
+                        file.read_to_end(&mut v).unwrap();
+                        for (new, old) in v.chunks(3).zip(state.palette.colors.iter_mut()) {
+                            old.r = new[0];
+                            old.g = new[1];
+                            old.b = new[2];
+                        }
+                    }
+                    Err(e) => {
+                        info!("Error opening palette {} ({})", path.display(), e);
+                    }
+                }
             }
 
             Command::ResetView => {
@@ -526,6 +559,7 @@ fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) {
 
 fn update_board(
     state: &mut WorldState,
+    world_path: &Path,
     counters: &mut Counters,
     board: &mut Board,
     robots: &mut Vec<Robot>
@@ -538,7 +572,7 @@ fn update_board(
                 Thing::Robot | Thing::RobotPushable => {
                     // FIXME: Account for missing global robot
                     let robot_id = board.level[level_idx].2 - 1;
-                    update_robot(state, counters, board, &mut *robots, robot_id as usize);
+                    update_robot(state, world_path, counters, board, &mut *robots, robot_id as usize);
                 }
 
                 Thing::Explosion => {
@@ -688,6 +722,8 @@ fn run(world_path: &Path) {
         }
     };
 
+    let world_path = Path::new(&world_path).parent().unwrap();
+
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem.window("revenge of megazeux", 640, 480)
@@ -738,6 +774,7 @@ fn run(world_path: &Path) {
         let _result = process_input(&mut world.boards[BOARD_ID], &input_state);
         update_board(
             &mut world.state,
+            world_path,
             &mut counters,
             &mut world.boards[BOARD_ID],
             &mut world.board_robots[BOARD_ID]
