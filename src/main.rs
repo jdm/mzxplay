@@ -148,18 +148,21 @@ fn update_robot(
         return;
     }
 
-    if robots[robot_id].cycle_delay > 0 {
-        robots[robot_id].cycle_delay -= 1;
+    if robots[robot_id].cycle_count < robots[robot_id].cycle {
+        robots[robot_id].cycle_count += 1;
         debug!("delaying {:?}", robots[robot_id].name);
         return;
     }
-    robots[robot_id].cycle_delay = robots[robot_id].cycle;
+    robots[robot_id].cycle_count = 0;
 
     debug!("executing {:?}", robots[robot_id].name);
 
+    let mut lines_run = 0;
+
     const CYCLES: u8 = 40;
     loop {
-        if robots[robot_id].cycle_count >= CYCLES ||
+        if lines_run >= CYCLES ||
+            !robots[robot_id].alive ||
             robots[robot_id].current_line as usize >= robots[robot_id].program.len()
         {
             break;
@@ -167,6 +170,9 @@ fn update_robot(
         let mut advance = true;
         let cmd = robots[robot_id].program[robots[robot_id].current_line as usize].clone();
         debug!("evaluating {:?} ({})", cmd, robots[robot_id].current_line);
+        let mut no_end_cycle = false;
+
+        lines_run += 1;
 
         match cmd {
             Command::End => advance = false,
@@ -183,6 +189,7 @@ fn update_robot(
                     robots[robot_id].current_loc = n.resolve(counters) as u8;
                 }
                 advance = robots[robot_id].current_loc == 0;
+                no_end_cycle = advance;
             }
 
             Command::PlayerChar(ref c) => {
@@ -392,6 +399,7 @@ fn update_robot(
             Command::Slash(ref s) => {
                 if robots[robot_id].current_loc as usize == s.as_bytes().len() {
                     robots[robot_id].current_loc = 0;
+                    no_end_cycle = true;
                 } else {
                     let dir = match s.as_bytes()[robots[robot_id].current_loc as usize] {
                         b'n' => Some(CardinalDirection::North),
@@ -414,23 +422,27 @@ fn update_robot(
                 } else {
                     robots[robot_id].current_loc = n.resolve(counters) as u8;
                 }
-                advance = robots[robot_id].current_loc == 0;
-                //FIXME: support modified directions.
-                let dir = match d.dir {
-                    Direction::North => Some(CardinalDirection::North),
-                    Direction::South => Some(CardinalDirection::South),
-                    Direction::East => Some(CardinalDirection::East),
-                    Direction::West => Some(CardinalDirection::West),
-                    _ => None,
-                };
-                if let Some(dir) = dir {
-                    move_robot(&mut robots[robot_id], board, dir);
+                if robots[robot_id].current_loc != 0 {
+                    //FIXME: support modified directions.
+                    let dir = match d.dir {
+                        Direction::North => Some(CardinalDirection::North),
+                        Direction::South => Some(CardinalDirection::South),
+                        Direction::East => Some(CardinalDirection::East),
+                        Direction::West => Some(CardinalDirection::West),
+                        _ => None,
+                    };
+                    if let Some(dir) = dir {
+                        move_robot(&mut robots[robot_id], board, dir);
+                    }
+                    advance = false;
+                } else {
+                    advance = true;
+                    no_end_cycle = true;
                 }
             }
 
             Command::Cycle(ref n) => {
                 let n = (n.resolve(counters) % 256) as u8;
-                robots[robot_id].cycle_delay = n;
                 robots[robot_id].cycle = n;
             }
 
@@ -451,8 +463,6 @@ fn update_robot(
             robots[robot_id].current_line += 1;
         }
 
-        robots[robot_id].cycle_count += 1;
-
         let dir = match robots[robot_id].walk {
             Direction::Idle => None,
             Direction::North => Some(CardinalDirection::North),
@@ -466,11 +476,10 @@ fn update_robot(
             move_robot(&mut robots[robot_id], board, dir);
         }
 
-        if cmd.is_cycle_ending() {
+        if !no_end_cycle && cmd.is_cycle_ending() {
             break;
         }
     }
-    robots[robot_id].cycle_count = 0;
 }
 
 enum BuiltInLabel {
