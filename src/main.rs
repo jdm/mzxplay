@@ -748,7 +748,7 @@ fn run(world_path: &Path) {
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
-    let window = video_subsystem.window("revenge of megazeux", 640, 480)
+    let window = video_subsystem.window("revenge of megazeux", 640, 350)
       .position_centered()
       .build()
       .unwrap();
