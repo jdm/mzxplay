@@ -46,6 +46,11 @@ impl<'a> Renderer for SdlRenderer<'a> {
         self.canvas.set_draw_color(Color::RGB(r, g, b));
         self.canvas.draw_point((x as i32, y as i32)).unwrap();
     }
+
+    fn clear(&mut self) {
+        self.canvas.set_draw_color(Color::RGB(0, 0, 0));
+        self.canvas.clear();
+    }
 }
 
 struct InputState {
@@ -203,15 +208,15 @@ fn update_robot(
     board: &mut Board,
     robots: &mut [Robot],
     robot_id: usize,
-) {
+) -> Option<StateChange> {
     if !robots[robot_id].alive {
-        return;
+        return None;
     }
 
     if robots[robot_id].cycle_count < robots[robot_id].cycle {
         robots[robot_id].cycle_count += 1;
         debug!("delaying {:?}", robots[robot_id].name);
-        return;
+        return None;
     }
     robots[robot_id].cycle_count = 0;
 
@@ -219,6 +224,7 @@ fn update_robot(
 
     let mut lines_run = 0;
     let mut mode = Relative::None;
+    let mut state_change = None;
 
     const CYCLES: u8 = 40;
     loop {
@@ -578,6 +584,14 @@ fn update_robot(
                 lines_run -= 1;
             }
 
+            Command::Teleport(ref b, ref x, ref y) => {
+                let coord = Coordinate(
+                    x.resolve(counters) as u16,
+                    y.resolve(counters) as u16,
+                );
+                state_change = Some(StateChange::Teleport(b.clone(), coord));
+            }
+
             Command::Label(_) => lines_run -= 1,
             Command::ZappedLabel(_) => lines_run -= 1,
 
@@ -609,6 +623,8 @@ fn update_robot(
     if let Some(dir) = dir {
         move_robot(&mut robots[robot_id], board, dir);
     }
+
+    state_change
 }
 
 enum BuiltInCounter {
@@ -719,13 +735,17 @@ fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) {
     }
 }
 
+enum StateChange {
+    Teleport(ByteString, Coordinate<u16>),
+}
+
 fn update_board(
     state: &mut WorldState,
     world_path: &Path,
     counters: &mut Counters,
     board: &mut Board,
     robots: &mut Vec<Robot>
-) {
+) -> Option<StateChange> {
     for y in 0..board.height {
         for x in 0..board.width {
             let level_idx = y * board.width + x;
@@ -734,7 +754,17 @@ fn update_board(
                 Thing::Robot | Thing::RobotPushable => {
                     // FIXME: Account for missing global robot
                     let robot_id = board.level[level_idx].2 - 1;
-                    update_robot(state, world_path, counters, board, &mut *robots, robot_id as usize);
+                    let change = update_robot(
+                        state,
+                        world_path,
+                        counters,
+                        board,
+                        &mut *robots,
+                        robot_id as usize
+                    );
+                    if change.is_some() {
+                        return change;
+                    }
                 }
 
                 Thing::Explosion => {
@@ -861,6 +891,8 @@ fn update_board(
             }
         }
     }
+
+    None
 }
 
 fn run(world_path: &Path) {
@@ -902,9 +934,9 @@ fn run(world_path: &Path) {
 
     let mut events = sdl_context.event_pump().unwrap();
 
-    const BOARD_ID: usize = 0;
+    let mut board_id = 0;
+    let is_title_screen = true;
     const GAME_SPEED: u64 = 3;
-    let is_title_screen = BOARD_ID == 0;
 
     let mut input_state = InputState {
         left_pressed: false,
@@ -934,14 +966,26 @@ fn run(world_path: &Path) {
             }
         }
 
-        let _result = process_input(&mut world.boards[BOARD_ID], &input_state);
-        update_board(
+        let _result = process_input(&mut world.boards[board_id], &input_state);
+        let change = update_board(
             &mut world.state,
             world_path,
             &mut counters,
-            &mut world.boards[BOARD_ID],
-            &mut world.board_robots[BOARD_ID]
+            &mut world.boards[board_id],
+            &mut world.board_robots[board_id]
         );
+
+        if let Some(change) = change {
+            match change {
+                StateChange::Teleport(board, coord) => {
+                    let id = world.boards.iter().position(|b| b.title == board);
+                    if let Some(id) = id {
+                        board_id = id;
+                        world.boards[board_id].player_pos = coord;
+                    }
+                }
+            }
+        }
 
         {
             let mut renderer = SdlRenderer {
@@ -950,12 +994,12 @@ fn run(world_path: &Path) {
             render(
                 &world.state,
                 (
-                    world.boards[BOARD_ID].upper_left_viewport,
-                    world.boards[BOARD_ID].viewport_size,
+                    world.boards[board_id].upper_left_viewport,
+                    world.boards[board_id].viewport_size,
                 ),
-                world.boards[BOARD_ID].scroll_offset,
-                &world.boards[BOARD_ID],
-                &world.board_robots[BOARD_ID],
+                world.boards[board_id].scroll_offset,
+                &world.boards[board_id],
+                &world.board_robots[board_id],
                 &mut renderer,
                 is_title_screen,
             );
