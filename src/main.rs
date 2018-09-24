@@ -386,6 +386,22 @@ fn update_robot(
                 }
             }
 
+            Command::Restore(ref l, ref n) => {
+                let n = n.resolve(counters);
+                for _ in 0..n {
+                    let label = robots[robot_id]
+                        .program
+                        .iter_mut()
+                        .rev()
+                        .find(|c| **c == Command::ZappedLabel(l.clone()));
+                    if let Some(cmd) = label {
+                        *cmd = Command::Label(l.clone());
+                    } else {
+                        break;
+                    }
+                }
+            }
+
             Command::Send(ref r, ref l) => {
                 for (idx, robot) in robots.iter_mut().enumerate() {
                     if r.as_ref() == b"all" || robot.name == *r {
