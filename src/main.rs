@@ -10,7 +10,7 @@ use libmzx::{
     Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Command, Thing,
     WorldState, Counters, Resolve, Direction, Operator, ExtendedColorValue, ExtendedParam,
     ColorValue, ParamValue, CharId, ByteString, Explosion, ExplosionResult, RelativePart,
-    SignedNumeric,
+    SignedNumeric, Color as MzxColor,
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use sdl2::event::Event;
@@ -304,13 +304,37 @@ fn update_robot(
                 }
             }
 
+            Command::SetColor(ref c, ref r, ref g, ref b) => {
+                let c = c.resolve(counters);
+                let r = r.resolve(counters) as u8;
+                let g = g.resolve(counters) as u8;
+                let b = b.resolve(counters) as u8;
+                state.palette.colors[c as usize].0 = MzxColor { r, g, b };
+            }
+
+            Command::ColorIntensity(ref c, ref n) => {
+                let n = n.resolve(counters);
+                let intensity = n as f32 / 100.;
+                match *c {
+                    Some(ref c) => {
+                        let c = c.resolve(counters);
+                        state.palette.colors[c as usize].1 = intensity;
+                    }
+                    None => {
+                        for &mut (_, ref mut i) in state.palette.colors.iter_mut() {
+                            *i = intensity;
+                        }
+                    }
+                }
+            }
+
             Command::LoadPalette(ref p) => {
                 let path = world_path.join(p.to_string());
                 match File::open(&path) {
                     Ok(mut file) => {
                         let mut v = vec![];
                         file.read_to_end(&mut v).unwrap();
-                        for (new, old) in v.chunks(3).zip(state.palette.colors.iter_mut()) {
+                        for (new, (ref mut old, _)) in v.chunks(3).zip(state.palette.colors.iter_mut()) {
                             old.r = new[0];
                             old.g = new[1];
                             old.b = new[2];
