@@ -173,10 +173,11 @@ impl Relative {
         x_value: &SignedNumeric,
         y_value: &SignedNumeric,
         counters: &Counters,
+        context: &Robot,
         part: RelativePart,
     ) -> Coordinate<u16> {
-        let x = self.resolve(x_value, counters, part, CoordinatePart::X);
-        let y = self.resolve(y_value, counters, part, CoordinatePart::Y);
+        let x = self.resolve(x_value, counters, context, part, CoordinatePart::X);
+        let y = self.resolve(y_value, counters, context, part, CoordinatePart::Y);
         Coordinate(x as u16, y as u16)
     }
 
@@ -184,10 +185,11 @@ impl Relative {
         &self,
         value: &SignedNumeric,
         counters: &Counters,
+        context: &Robot,
         part: RelativePart,
         coord_part: CoordinatePart,
     ) -> i16 {
-        let v = value.resolve(counters);
+        let v = value.resolve(counters, context);
         match *self {
             Relative::None => v,
             Relative::Coordinate(ref value_part, ref coord) => {
@@ -254,14 +256,14 @@ fn update_robot(
                 if robots[robot_id].current_loc > 0 {
                     robots[robot_id].current_loc -= 1;
                 } else {
-                    robots[robot_id].current_loc = n.resolve(counters) as u8;
+                    robots[robot_id].current_loc = n.resolve(counters, &robots[robot_id]) as u8;
                 }
                 advance = robots[robot_id].current_loc == 0;
                 no_end_cycle = advance;
             }
 
             Command::PlayerChar(ref c) => {
-                let c = c.resolve(counters);
+                let c = c.resolve(counters, &robots[robot_id]);
                 state.set_char_id(CharId::PlayerNorth, c);
                 state.set_char_id(CharId::PlayerSouth, c);
                 state.set_char_id(CharId::PlayerEast, c);
@@ -269,7 +271,7 @@ fn update_robot(
             }
 
             Command::PlayerCharDir(ref d, ref c) => {
-                let c = c.resolve(counters);
+                let c = c.resolve(counters, &robots[robot_id]);
                 match d.dir {
                     Direction::North => state.set_char_id(CharId::PlayerNorth, c),
                     Direction::South => state.set_char_id(CharId::PlayerSouth, c),
@@ -280,13 +282,13 @@ fn update_robot(
             }
 
             Command::PlayerColor(ref c) => {
-                let c = c.resolve(counters);
+                let c = c.resolve(counters, &robots[robot_id]);
                 state.set_char_id(CharId::PlayerColor, c.0);
             }
 
             Command::CharEdit(ref c, ref bytes) => {
-                let c = c.resolve(counters);
-                let bytes: Vec<u8> = bytes.iter().map(|b| b.resolve(counters)).collect();
+                let c = c.resolve(counters, &robots[robot_id]);
+                let bytes: Vec<u8> = bytes.iter().map(|b| b.resolve(counters, &robots[robot_id])).collect();
                 state.charset.nth_mut(c).copy_from_slice(&bytes);
             }
 
@@ -305,19 +307,19 @@ fn update_robot(
             }
 
             Command::SetColor(ref c, ref r, ref g, ref b) => {
-                let c = c.resolve(counters);
-                let r = r.resolve(counters) as u8;
-                let g = g.resolve(counters) as u8;
-                let b = b.resolve(counters) as u8;
+                let c = c.resolve(counters, &robots[robot_id]);
+                let r = r.resolve(counters, &robots[robot_id]) as u8;
+                let g = g.resolve(counters, &robots[robot_id]) as u8;
+                let b = b.resolve(counters, &robots[robot_id]) as u8;
                 state.palette.colors[c as usize].0 = MzxColor { r, g, b };
             }
 
             Command::ColorIntensity(ref c, ref n) => {
-                let n = n.resolve(counters);
+                let n = n.resolve(counters, &robots[robot_id]);
                 let intensity = n as f32 / 100.;
                 match *c {
                     Some(ref c) => {
-                        let c = c.resolve(counters);
+                        let c = c.resolve(counters, &robots[robot_id]);
                         state.palette.colors[c as usize].1 = intensity;
                     }
                     None => {
@@ -370,13 +372,13 @@ fn update_robot(
             }
 
             Command::ScrollViewXY(ref x, ref y) => {
-                let x = x.resolve(counters);
-                let y = y.resolve(counters);
+                let x = x.resolve(counters, &robots[robot_id]);
+                let y = y.resolve(counters, &robots[robot_id]);
                 board.scroll_offset = Coordinate(x as u16, y as u16);
             }
 
             Command::ScrollView(ref dir, ref n) => {
-                let n = n.resolve(counters);
+                let n = n.resolve(counters, &robots[robot_id]);
                 match dir.dir {
                     Direction::West => if board.scroll_offset.0 < n {
                         board.scroll_offset.0 = 0;
@@ -403,25 +405,25 @@ fn update_robot(
             }
 
             Command::Set(ref s, ref n) => {
-                let val = n.resolve(counters) as i16;
-                counters.set(s.clone(), val);
+                let val = n.resolve(counters, &robots[robot_id]) as i16;
+                counters.set(s.clone(), &mut robots[robot_id], val);
             }
 
             Command::Dec(ref s, ref n) => {
-                let val = n.resolve(counters) as i16;
-                let initial = counters.get(s);
-                counters.set(s.clone(), initial - val);
+                let val = n.resolve(counters, &robots[robot_id]) as i16;
+                let initial = counters.get(s, &robots[robot_id]);
+                counters.set(s.clone(), &mut robots[robot_id], initial - val);
             }
 
             Command::Inc(ref s, ref n) => {
-                let val = n.resolve(counters) as i16;
-                let initial = counters.get(s);
-                counters.set(s.clone(), initial + val);
+                let val = n.resolve(counters, &robots[robot_id]) as i16;
+                let initial = counters.get(s, &robots[robot_id]);
+                counters.set(s.clone(), &mut robots[robot_id], initial + val);
             }
 
             Command::If(ref s, op, ref n, ref l) => {
-                let val = counters.get(s);
-                let cmp = n.resolve(counters) as i16;
+                let val = counters.get(s, &robots[robot_id]);
+                let cmp = n.resolve(counters, &robots[robot_id]) as i16;
                 let result = match op {
                     Operator::Equals => val == cmp,
                     Operator::NotEquals => val != cmp,
@@ -436,10 +438,10 @@ fn update_robot(
             }
 
             Command::Change(ref c1, ref t1, ref p1, ref c2, ref t2, ref p2) => {
-                let c1 = c1.resolve(counters);
-                let c2 = c2.resolve(counters);
-                let p1 = p1.resolve(counters);
-                let p2 = p2.resolve(counters);
+                let c1 = c1.resolve(counters, &robots[robot_id]);
+                let c2 = c2.resolve(counters, &robots[robot_id]);
+                let p1 = p1.resolve(counters, &robots[robot_id]);
+                let p2 = p2.resolve(counters, &robots[robot_id]);
                 for &mut (ref mut id, ref mut color, ref mut param) in &mut board.level {
                     if c1.matches(ColorValue(*color)) &&
                         p1.matches(ParamValue(*param)) &&
@@ -466,11 +468,11 @@ fn update_robot(
             }
 
             Command::Color(ref c) => {
-                board.level_at_mut(&robots[robot_id].position).1 = c.resolve(counters).0;
+                board.level_at_mut(&robots[robot_id].position).1 = c.resolve(counters, &robots[robot_id]).0;
             }
 
             Command::Char(ref c) => {
-                robots[robot_id].ch = c.resolve(counters);
+                robots[robot_id].ch = c.resolve(counters, &robots[robot_id]);
             }
 
             Command::Goto(ref l) => {
@@ -478,7 +480,7 @@ fn update_robot(
             }
 
             Command::Zap(ref l, ref n) => {
-                let n = n.resolve(counters);
+                let n = n.resolve(counters, &robots[robot_id]);
                 for _ in 0..n {
                     let label = robots[robot_id]
                         .program
@@ -491,7 +493,7 @@ fn update_robot(
             }
 
             Command::Restore(ref l, ref n) => {
-                let n = n.resolve(counters);
+                let n = n.resolve(counters, &robots[robot_id]);
                 for _ in 0..n {
                     let label = robots[robot_id]
                         .program
@@ -546,7 +548,7 @@ fn update_robot(
                 if robots[robot_id].current_loc > 0 {
                     robots[robot_id].current_loc -= 1;
                 } else {
-                    robots[robot_id].current_loc = n.resolve(counters) as u8;
+                    robots[robot_id].current_loc = n.resolve(counters, &robots[robot_id]) as u8;
                 }
                 if robots[robot_id].current_loc != 0 {
                     //FIXME: support modified directions.
@@ -568,13 +570,13 @@ fn update_robot(
             }
 
             Command::Cycle(ref n) => {
-                let n = (n.resolve(counters) % 256) as u8;
+                let n = (n.resolve(counters, &robots[robot_id]) % 256) as u8;
                 robots[robot_id].cycle = n;
             }
 
             Command::Explode(ref n) => {
                 robots[robot_id].alive = false;
-                let n = n.resolve(counters) as u8;
+                let n = n.resolve(counters, &robots[robot_id]) as u8;
                 let &mut (ref mut id, ref mut c, ref mut param) =
                     board.level_at_mut(&robots[robot_id].position);
                 *id = Thing::Explosion.to_u8().unwrap();
@@ -587,7 +589,7 @@ fn update_robot(
             },
 
             Command::GotoXY(ref x, ref y) => {
-                let coord = mode.resolve_xy(x, y, counters, RelativePart::First);
+                let coord = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
                 move_robot_to(&mut robots[robot_id], board, coord);
             }
 
@@ -606,8 +608,8 @@ fn update_robot(
             Command::RelCounters(ref part) => {
                 //FIXME: casting is probably the wrong solution here
                 let coord = Coordinate(
-                    counters.get(&BuiltInCounter::Xpos.into()) as u16,
-                    counters.get(&BuiltInCounter::Ypos.into()) as u16,
+                    counters.get(&BuiltInCounter::Xpos.into(), &robots[robot_id]) as u16,
+                    counters.get(&BuiltInCounter::Ypos.into(), &robots[robot_id]) as u16,
                 );
                 mode = Relative::Coordinate(*part, coord);
                 reset_mode = false;
@@ -616,8 +618,8 @@ fn update_robot(
 
             Command::Teleport(ref b, ref x, ref y) => {
                 let coord = Coordinate(
-                    x.resolve(counters) as u16,
-                    y.resolve(counters) as u16,
+                    x.resolve(counters, &robots[robot_id]) as u16,
+                    y.resolve(counters, &robots[robot_id]) as u16,
                 );
                 state_change = Some(StateChange::Teleport(b.clone(), coord));
             }
