@@ -9,7 +9,8 @@ extern crate time;
 use libmzx::{
     Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Command, Thing,
     WorldState, Counters, Resolve, Direction, Operator, ExtendedColorValue, ExtendedParam,
-    ColorValue, ParamValue, CharId, ByteString, Explosion, ExplosionResult
+    ColorValue, ParamValue, CharId, ByteString, Explosion, ExplosionResult, RelativePart,
+    SignedNumeric,
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use sdl2::event::Event;
@@ -136,6 +137,65 @@ fn process_input(
     None
 }
 
+enum CoordinatePart {
+    X,
+    Y,
+}
+
+trait CoordinateExtractor {
+    type CoordinateType;
+    fn extract(&self, part: CoordinatePart) -> Self::CoordinateType;
+}
+
+impl<T: Copy> CoordinateExtractor for Coordinate<T> {
+    type CoordinateType = T;
+    fn extract(&self, part: CoordinatePart) -> T {
+        match part {
+            CoordinatePart::X => self.0,
+            CoordinatePart::Y => self.1,
+        }
+    }
+}
+
+enum Relative {
+    None,
+    Coordinate(Option<RelativePart>, Coordinate<u16>),
+}
+
+impl Relative {
+    fn resolve_xy(
+        &self,
+        x_value: &SignedNumeric,
+        y_value: &SignedNumeric,
+        counters: &Counters,
+        part: RelativePart,
+    ) -> Coordinate<u16> {
+        let x = self.resolve(x_value, counters, part, CoordinatePart::X);
+        let y = self.resolve(y_value, counters, part, CoordinatePart::Y);
+        Coordinate(x as u16, y as u16)
+    }
+
+    fn resolve(
+        &self,
+        value: &SignedNumeric,
+        counters: &Counters,
+        part: RelativePart,
+        coord_part: CoordinatePart,
+    ) -> i16 {
+        let v = value.resolve(counters);
+        match *self {
+            Relative::None => v,
+            Relative::Coordinate(ref value_part, ref coord) => {
+                if value_part.map_or(true, |p| p == part) {
+                    v + coord.extract(coord_part) as i16
+                } else {
+                    v
+                }
+            }
+        }
+    }
+}
+
 fn update_robot(
     state: &mut WorldState,
     world_path: &Path,
@@ -158,6 +218,7 @@ fn update_robot(
     debug!("executing {:?}", robots[robot_id].name);
 
     let mut lines_run = 0;
+    let mut mode = Relative::None;
 
     const CYCLES: u8 = 40;
     loop {
@@ -171,6 +232,7 @@ fn update_robot(
         let cmd = robots[robot_id].program[robots[robot_id].current_line as usize].clone();
         debug!("evaluating {:?} ({})", cmd, robots[robot_id].current_line);
         let mut no_end_cycle = false;
+        let mut reset_mode = true;
 
         lines_run += 1;
 
@@ -482,32 +544,78 @@ fn update_robot(
                 overlay.0 = mode;
             },
 
+            Command::GotoXY(ref x, ref y) => {
+                let coord = mode.resolve_xy(x, y, counters, RelativePart::First);
+                move_robot_to(&mut robots[robot_id], board, coord);
+            }
+
+            Command::RelSelf(ref part) => {
+                mode = Relative::Coordinate(*part, robots[robot_id].position);
+                reset_mode = false;
+                lines_run -= 1;
+            }
+
+            Command::RelPlayer(ref part) => {
+                mode = Relative::Coordinate(*part, board.player_pos);
+                reset_mode = false;
+                lines_run -= 1;
+            }
+
+            Command::RelCounters(ref part) => {
+                //FIXME: casting is probably the wrong solution here
+                let coord = Coordinate(
+                    counters.get(&BuiltInCounter::Xpos.into()) as u16,
+                    counters.get(&BuiltInCounter::Ypos.into()) as u16,
+                );
+                mode = Relative::Coordinate(*part, coord);
+                reset_mode = false;
+                lines_run -= 1;
+            }
+
             Command::Label(_) => lines_run -= 1,
             Command::ZappedLabel(_) => lines_run -= 1,
 
             _ => (),
         }
 
-        if advance {
-            robots[robot_id].current_line += 1;
+        if reset_mode {
+            mode = Relative::None;
         }
 
-        let dir = match robots[robot_id].walk {
-            Direction::Idle => None,
-            Direction::North => Some(CardinalDirection::North),
-            Direction::South => Some(CardinalDirection::South),
-            Direction::East => Some(CardinalDirection::East),
-            Direction::West => Some(CardinalDirection::West),
-            _ => None,
-        };
-
-        if let Some(dir) = dir {
-            move_robot(&mut robots[robot_id], board, dir);
+        if advance {
+            robots[robot_id].current_line += 1;
         }
 
         if !no_end_cycle && cmd.is_cycle_ending() {
             break;
         }
+    }
+
+    let dir = match robots[robot_id].walk {
+        Direction::Idle => None,
+        Direction::North => Some(CardinalDirection::North),
+        Direction::South => Some(CardinalDirection::South),
+        Direction::East => Some(CardinalDirection::East),
+        Direction::West => Some(CardinalDirection::West),
+        _ => None,
+    };
+
+    if let Some(dir) = dir {
+        move_robot(&mut robots[robot_id], board, dir);
+    }
+}
+
+enum BuiltInCounter {
+    Xpos,
+    Ypos,
+}
+
+impl Into<ByteString> for BuiltInCounter {
+    fn into(self) -> ByteString {
+        ByteString::from(match self {
+            BuiltInCounter::Xpos => "xpos",
+            BuiltInCounter::Ypos => "ypos",
+        })
     }
 }
 
@@ -544,6 +652,16 @@ fn send_robot_to_label<S: Into<ByteString>>(robot: &mut Robot, label: S) -> bool
 enum MoveResult {
     Move(Coordinate<u16>),
     Edge,
+}
+
+fn move_robot_to(robot: &mut Robot, board: &mut Board, pos: Coordinate<u16>) {
+    let thing = board.thing_at(&pos);
+    if thing == Thing::Player {
+        return;
+    }
+    // TODO: check if thing can move to under layer
+    board.move_level_to(&robot.position, &pos);
+    robot.position = pos;
 }
 
 fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) {
