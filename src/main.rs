@@ -284,6 +284,12 @@ fn update_robot(
                 state.set_char_id(CharId::PlayerColor, c.0);
             }
 
+            Command::CharEdit(ref c, ref bytes) => {
+                let c = c.resolve(counters);
+                let bytes: Vec<u8> = bytes.iter().map(|b| b.resolve(counters)).collect();
+                state.charset.nth_mut(c).copy_from_slice(&bytes);
+            }
+
             Command::LoadCharSet(ref c) => {
                 let path = world_path.join(c.to_string());
                 match File::open(&path) {
