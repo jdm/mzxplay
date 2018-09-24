@@ -377,6 +377,12 @@ fn update_robot(
                 counters.set(s.clone(), initial - val);
             }
 
+            Command::Inc(ref s, ref n) => {
+                let val = n.resolve(counters) as i16;
+                let initial = counters.get(s);
+                counters.set(s.clone(), initial + val);
+            }
+
             Command::If(ref s, op, ref n, ref l) => {
                 let val = counters.get(s);
                 let cmp = n.resolve(counters) as i16;
