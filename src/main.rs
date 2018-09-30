@@ -467,6 +467,59 @@ fn update_robot(
                 }
             }
 
+            Command::ChangeOverlay(ref c1, ref c2, ref chars) => {
+                let c1 = c1.resolve(counters, &robots[robot_id]);
+                let c2 = c2.resolve(counters, &robots[robot_id]);
+                let chars = chars.as_ref().map(|(ch1, ch2)| (
+                    ch1.resolve(counters, &robots[robot_id]),
+                    ch2.resolve(counters, &robots[robot_id]),
+                ));
+                if let Some((_, ref mut overlay)) = board.overlay {
+                    for &mut (ref mut ch, ref mut color) in overlay.iter_mut() {
+                        if c1.matches(ColorValue(*color)) &&
+                            chars.as_ref().map_or(true, |(ch1, _)| ch1 == ch)
+                        {
+                            match c2 {
+                                ExtendedColorValue::Known(c) =>
+                                    *color = c.0,
+                                ExtendedColorValue::Unknown(Some(bg), None) =>
+                                    *color = (*color & 0x0F) | (bg.0 << 4),
+                                ExtendedColorValue::Unknown(None, Some(fg)) =>
+                                    *color = (*color & 0xF0) | fg.0,
+                                ExtendedColorValue::Unknown(None, None) => (),
+                                ExtendedColorValue::Unknown(Some(_), Some(_)) =>
+                                    unreachable!(),
+                            }
+                            if let Some((_, ch2)) = chars {
+                                *ch = ch2;
+                            }
+                        }
+                    }
+                }
+            }
+
+            Command::PutOverlay(ref c, ref ch, ref x, ref y) => {
+                let c = c.resolve(counters, &robots[robot_id]);
+                let ch = ch.resolve(counters, &robots[robot_id]);
+                let pos = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
+                if let Some((_, ref mut overlay)) = board.overlay {
+                    let overlay = &mut overlay[pos.1 as usize * board.width + pos.0 as usize];
+                    let color = match c {
+                        ExtendedColorValue::Known(c) =>
+                            c.0,
+                        ExtendedColorValue::Unknown(Some(bg), None) =>
+                            (overlay.0 & 0x0F) | (bg.0 << 4),
+                        ExtendedColorValue::Unknown(None, Some(fg)) =>
+                            (overlay.0 & 0xF0) | fg.0,
+                        ExtendedColorValue::Unknown(None, None) => 0x07,
+                        ExtendedColorValue::Unknown(Some(_), Some(_)) =>
+                            unreachable!(),
+                    };
+
+                    *overlay = (ch, color);
+                }
+            }
+
             Command::Color(ref c) => {
                 board.level_at_mut(&robots[robot_id].position).1 = c.resolve(counters, &robots[robot_id]).0;
             }
@@ -566,6 +619,22 @@ fn update_robot(
                 } else {
                     advance = true;
                     no_end_cycle = true;
+                }
+            }
+
+            Command::TryDir(ref d, ref l) => {
+                //FIXME: support modified directions.
+                let dir = match d.dir {
+                    Direction::North => Some(CardinalDirection::North),
+                    Direction::South => Some(CardinalDirection::South),
+                    Direction::East => Some(CardinalDirection::East),
+                    Direction::West => Some(CardinalDirection::West),
+                    _ => None,
+                };
+                if let Some(dir) = dir {
+                    if move_robot(&mut robots[robot_id], board, dir) == Move::Blocked {
+                        send_robot_to_label(&mut robots[robot_id], l.clone());
+                    }
                 }
             }
 
@@ -718,7 +787,13 @@ fn move_robot_to(robot: &mut Robot, board: &mut Board, pos: Coordinate<u16>) {
     robot.position = pos;
 }
 
-fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) {
+#[derive(PartialEq)]
+enum Move {
+    Moved,
+    Blocked,
+}
+
+fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) -> Move {
     let result = match dir {
         CardinalDirection::North => {
             if robot.position.1 == 0 {
@@ -754,14 +829,17 @@ fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) {
             if !send_robot_to_label(robot, BuiltInLabel::Edge) {
                 send_robot_to_label(robot, BuiltInLabel::Thud);
             }
+            Move::Blocked
         }
         MoveResult::Move(new_pos) => {
             let thing = board.thing_at(&new_pos);
             if thing.is_solid() {
                 send_robot_to_label(robot, BuiltInLabel::Thud);
+                Move::Blocked
             } else {
                 board.move_level_to(&robot.position, &new_pos);
                 robot.position = new_pos;
+                Move::Moved
             }
         }
     }
