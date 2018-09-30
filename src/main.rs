@@ -208,6 +208,7 @@ fn update_robot(
     world_path: &Path,
     counters: &mut Counters,
     board: &mut Board,
+    board_id: usize,
     robots: &mut [Robot],
     robot_id: usize,
 ) -> Option<StateChange> {
@@ -693,6 +694,17 @@ fn update_robot(
                 state_change = Some(StateChange::Teleport(b.clone(), coord));
             }
 
+            Command::SavePlayerPosition(ref n) => {
+                let n = n.resolve(counters, &robots[robot_id]) as usize;
+                state.saved_positions[n] = (board_id, board.player_pos);
+            }
+
+            Command::RestorePlayerPosition(ref n) => {
+                let n = n.resolve(counters, &robots[robot_id]) as usize;
+                let (board_id, pos) = state.saved_positions[n];
+                state_change = Some(StateChange::Restore(board_id, pos));
+            }
+
             Command::Label(_) => lines_run -= 1,
             Command::ZappedLabel(_) => lines_run -= 1,
 
@@ -847,6 +859,7 @@ fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) -> M
 
 enum StateChange {
     Teleport(ByteString, Coordinate<u16>),
+    Restore(usize, Coordinate<u16>),
 }
 
 fn update_board(
@@ -854,6 +867,7 @@ fn update_board(
     world_path: &Path,
     counters: &mut Counters,
     board: &mut Board,
+    board_id: usize,
     robots: &mut Vec<Robot>
 ) -> Option<StateChange> {
     for y in 0..board.height {
@@ -869,6 +883,7 @@ fn update_board(
                         world_path,
                         counters,
                         board,
+                        board_id,
                         &mut *robots,
                         robot_id as usize
                     );
@@ -1082,6 +1097,7 @@ fn run(world_path: &Path) {
             world_path,
             &mut counters,
             &mut world.boards[board_id],
+            board_id,
             &mut world.board_robots[board_id]
         );
 
@@ -1093,6 +1109,10 @@ fn run(world_path: &Path) {
                         board_id = id;
                         world.boards[board_id].player_pos = coord;
                     }
+                }
+                StateChange::Restore(id, coord) => {
+                    board_id = id;
+                    world.boards[board_id].player_pos = coord;
                 }
             }
         }
