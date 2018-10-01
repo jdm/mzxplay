@@ -10,7 +10,7 @@ use libmzx::{
     Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Command, Thing,
     WorldState, Counters, Resolve, Direction, Operator, ExtendedColorValue, ExtendedParam,
     ColorValue, ParamValue, CharId, ByteString, Explosion, ExplosionResult, RelativePart,
-    SignedNumeric, Color as MzxColor,
+    SignedNumeric, Color as MzxColor, ModifiedDirection
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use sdl2::event::Event;
@@ -273,12 +273,12 @@ fn update_robot(
 
             Command::PlayerCharDir(ref d, ref c) => {
                 let c = c.resolve(counters, &robots[robot_id]);
-                match d.dir {
-                    Direction::North => state.set_char_id(CharId::PlayerNorth, c),
-                    Direction::South => state.set_char_id(CharId::PlayerSouth, c),
-                    Direction::East => state.set_char_id(CharId::PlayerEast, c),
-                    Direction::West => state.set_char_id(CharId::PlayerWest, c),
-                    _ => (),
+                match dir_to_cardinal_dir(&robots[robot_id], d) {
+                    Some(CardinalDirection::North) => state.set_char_id(CharId::PlayerNorth, c),
+                    Some(CardinalDirection::South) => state.set_char_id(CharId::PlayerSouth, c),
+                    Some(CardinalDirection::East) => state.set_char_id(CharId::PlayerEast, c),
+                    Some(CardinalDirection::West) => state.set_char_id(CharId::PlayerWest, c),
+                    None => (),
                 }
             }
 
@@ -380,28 +380,29 @@ fn update_robot(
 
             Command::ScrollView(ref dir, ref n) => {
                 let n = n.resolve(counters, &robots[robot_id]);
-                match dir.dir {
-                    Direction::West => if board.scroll_offset.0 < n {
+                let dir = dir_to_cardinal_dir(&robots[robot_id], dir);
+                match dir {
+                    Some(CardinalDirection::West) => if board.scroll_offset.0 < n {
                         board.scroll_offset.0 = 0;
                     } else {
                         board.scroll_offset.0 -= n;
                     },
-                    Direction::East => if (board.scroll_offset.0 + n) as usize > board.width - board.viewport_size.0 as usize {
+                    Some(CardinalDirection::East) => if (board.scroll_offset.0 + n) as usize > board.width - board.viewport_size.0 as usize {
                         board.scroll_offset.0 = board.width as u16 - board.viewport_size.0 as u16;
                     } else {
                         board.scroll_offset.0 += n;
                     },
-                    Direction::North => if board.scroll_offset.1 < n {
+                    Some(CardinalDirection::North) => if board.scroll_offset.1 < n {
                         board.scroll_offset.1 = 0;
                     } else {
                         board.scroll_offset.1 -= n;
                     },
-                    Direction::South => if (board.scroll_offset.1 + n) as usize > board.height - board.viewport_size.1 as usize {
+                    Some(CardinalDirection::South) => if (board.scroll_offset.1 + n) as usize > board.height - board.viewport_size.1 as usize {
                         board.scroll_offset.1 = board.height as u16 - board.viewport_size.1 as u16;
                     } else {
                         board.scroll_offset.1 += n;
                     }
-                    _ => ()
+                    None => (),
                 };
             }
 
@@ -573,9 +574,22 @@ fn update_robot(
                 }
             }
 
+            Command::SendDir(ref d, ref l) => {
+                if let Some(dir) = dir_to_cardinal_dir(&robots[robot_id], d) {
+                    let adjusted = adjust_coordinate(robots[robot_id].position, board, dir);
+                    if let Some(coord) = adjusted {
+                        let thing = board.thing_at(&coord);
+                        if thing == Thing::Robot || thing == Thing::RobotPushable {
+                            let (_, _, robot_id) = board.level_at(&coord);
+                            //FIXME: account for global robot
+                            send_robot_to_label(&mut robots[*robot_id as usize - 1], l.clone());
+                        }
+                    }
+                }
+            }
+
             Command::Walk(ref d) => {
-                //FIXME: support modified directions.
-                robots[robot_id].walk = d.dir;
+                robots[robot_id].walk = dir_to_cardinal_dir(&robots[robot_id], d);
             }
 
             Command::Slash(ref s) => {
@@ -605,14 +619,7 @@ fn update_robot(
                     robots[robot_id].current_loc = n.resolve(counters, &robots[robot_id]) as u8;
                 }
                 if robots[robot_id].current_loc != 0 {
-                    //FIXME: support modified directions.
-                    let dir = match d.dir {
-                        Direction::North => Some(CardinalDirection::North),
-                        Direction::South => Some(CardinalDirection::South),
-                        Direction::East => Some(CardinalDirection::East),
-                        Direction::West => Some(CardinalDirection::West),
-                        _ => None,
-                    };
+                    let dir = dir_to_cardinal_dir(&robots[robot_id], d);
                     if let Some(dir) = dir {
                         move_robot(&mut robots[robot_id], board, dir);
                     }
@@ -624,14 +631,7 @@ fn update_robot(
             }
 
             Command::TryDir(ref d, ref l) => {
-                //FIXME: support modified directions.
-                let dir = match d.dir {
-                    Direction::North => Some(CardinalDirection::North),
-                    Direction::South => Some(CardinalDirection::South),
-                    Direction::East => Some(CardinalDirection::East),
-                    Direction::West => Some(CardinalDirection::West),
-                    _ => None,
-                };
+                let dir = dir_to_cardinal_dir(&robots[robot_id], d);
                 if let Some(dir) = dir {
                     if move_robot(&mut robots[robot_id], board, dir) == Move::Blocked {
                         send_robot_to_label(&mut robots[robot_id], l.clone());
@@ -705,6 +705,25 @@ fn update_robot(
                 state_change = Some(StateChange::Restore(board_id, pos));
             }
 
+            Command::LoopStart => {
+                robots[robot_id].loop_count = 0;
+            }
+
+            Command::LoopFor(ref n) => {
+                let n = n.resolve(counters, &robots[robot_id]);
+                if robots[robot_id].loop_count < n {
+                    let start = robots[robot_id]
+                        .program[0..robots[robot_id].current_line as usize]
+                        .iter()
+                        .rev()
+                        .position(|c| *c == Command::LoopStart);
+                    if let Some(idx) = start {
+                        robots[robot_id].current_line -= idx as u16 - 1;
+                    }
+                    robots[robot_id].loop_count += 1;
+                }
+            }
+
             Command::Label(_) => lines_run -= 1,
             Command::ZappedLabel(_) => lines_run -= 1,
 
@@ -724,16 +743,7 @@ fn update_robot(
         }
     }
 
-    let dir = match robots[robot_id].walk {
-        Direction::Idle => None,
-        Direction::North => Some(CardinalDirection::North),
-        Direction::South => Some(CardinalDirection::South),
-        Direction::East => Some(CardinalDirection::East),
-        Direction::West => Some(CardinalDirection::West),
-        _ => None,
-    };
-
-    if let Some(dir) = dir {
+    if let Some(dir) = robots[robot_id].walk {
         move_robot(&mut robots[robot_id], board, dir);
     }
 
@@ -782,6 +792,76 @@ fn send_robot_to_label<S: Into<ByteString>>(robot: &mut Robot, label: S) -> bool
     } else {
         false
     }
+}
+
+fn dir_to_cardinal_dir(robot: &Robot, dir: &ModifiedDirection) -> Option<CardinalDirection> {
+    // TODO: blocked, not blocked, etc.
+    let resolved = match dir.dir {
+        Direction::North => Some(CardinalDirection::North),
+        Direction::South => Some(CardinalDirection::South),
+        Direction::East => Some(CardinalDirection::East),
+        Direction::West => Some(CardinalDirection::West),
+        Direction::Idle | Direction::NoDir => None,
+        Direction::Flow => robot.walk.clone(),
+        Direction::RandNs => Some(if rand::random::<bool>() == true {
+            CardinalDirection::North
+        } else {
+            CardinalDirection::South
+        }),
+        Direction::RandNe => Some(if rand::random::<bool>() == true {
+            CardinalDirection::North
+        } else {
+            CardinalDirection::East
+        }),
+        Direction::RandEw => Some(if rand::random::<bool>() == true {
+            CardinalDirection::East
+        } else {
+            CardinalDirection::West
+        }),
+        Direction::Anydir | Direction::RandAny => Some(match rand::random::<u8>() % 4 {
+            0 => CardinalDirection::North,
+            1 => CardinalDirection::South,
+            2 => CardinalDirection::East,
+            3 => CardinalDirection::West,
+            _ => unreachable!(),
+        }),
+        Direction::Seek | Direction::Beneath | Direction::RandB | Direction::RandNb => None, //TODO
+    };
+    // TODO: cw, random perpendicular, randnot
+    if dir.opp {
+        resolved.map(|d| match d {
+            CardinalDirection::North => CardinalDirection::South,
+            CardinalDirection::South => CardinalDirection::North,
+            CardinalDirection::East => CardinalDirection::West,
+            CardinalDirection::West => CardinalDirection::East,
+        })
+    } else {
+        resolved
+    }
+}
+
+fn adjust_coordinate(
+    coord: Coordinate<u16>,
+    board: &Board,
+    dir: CardinalDirection
+) -> Option<Coordinate<u16>> {
+    let (xdiff, ydiff) = match dir {
+        CardinalDirection::North => (0, -1),
+        CardinalDirection::South => (0, 1),
+        CardinalDirection::East => (1, 0),
+        CardinalDirection::West => (-1, 0),
+    };
+    if (coord.0 as i16 + xdiff < 0) ||
+        ((coord.0 as i16 + xdiff) as usize >= board.width) ||
+        (coord.1 as i16 + ydiff < 0) ||
+        ((coord.1 as i16 + ydiff) as usize >= board.height)
+    {
+        return None;
+    }
+    Some(Coordinate(
+        (coord.0 as i16 + xdiff) as u16,
+        (coord.1 as i16 + ydiff) as u16,
+    ))
 }
 
 enum MoveResult {
