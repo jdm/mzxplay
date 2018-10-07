@@ -301,6 +301,13 @@ fn update_robot(
                 state.charset.nth_mut(c).copy_from_slice(&bytes);
             }
 
+            Command::CopyChar(ref c1, ref c2) => {
+                let c1 = c1.resolve(counters, &robots[robot_id]);
+                let c2 = c2.resolve(counters, &robots[robot_id]);
+                let bytes: Vec<u8> = state.charset.nth(c1).to_owned();
+                state.charset.nth_mut(c2).copy_from_slice(&bytes);
+            }
+
             Command::LoadCharSet(ref c) => {
                 let path = world_path.join(c.to_string());
                 match File::open(&path) {
@@ -596,6 +603,16 @@ fn update_robot(
                 }
             }
 
+            Command::SendXY(ref x, ref y, ref l) => {
+                let pos = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
+                let thing = board.thing_at(&pos);
+                if thing == Thing::Robot || thing == Thing::RobotPushable {
+                    let (_, _, robot_id) = board.level_at(&pos);
+                    //FIXME: account for global robot
+                    send_robot_to_label(&mut robots[*robot_id as usize - 1], l.clone());
+                }
+            }
+
             Command::Walk(ref d) => {
                 robots[robot_id].walk = dir_to_cardinal_dir(&robots[robot_id], d);
             }
@@ -735,7 +752,27 @@ fn update_robot(
             Command::Label(_) => lines_run -= 1,
             Command::ZappedLabel(_) => lines_run -= 1,
 
-            _ => (),
+            Command::CopyBlock(ref src_x, ref src_y, ref w, ref h, ref dst_x, ref dst_y) => {
+                let src = mode.resolve_xy(
+                    src_x,
+                    src_y,
+                    counters,
+                    &robots[robot_id],
+                    RelativePart::First
+                );
+                let w = w.resolve(counters, &robots[robot_id]);
+                let h = h.resolve(counters, &robots[robot_id]);
+                let dest = mode.resolve_xy(
+                    dst_x,
+                    dst_y,
+                    counters,
+                    &robots[robot_id],
+                    RelativePart::Last
+                );
+                board.copy(src, Size(w, h), dest);
+            }
+
+            ref cmd => warn!("ignoring {:?}", cmd),
         }
 
         if reset_mode {
