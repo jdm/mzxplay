@@ -10,7 +10,7 @@ use libmzx::{
     Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Command, Thing,
     WorldState, Counters, Resolve, Direction, Operator, ExtendedColorValue, ExtendedParam,
     ColorValue, ParamValue, CharId, ByteString, Explosion, ExplosionResult, RelativePart,
-    SignedNumeric, Color as MzxColor, ModifiedDirection
+    SignedNumeric, Color as MzxColor, ModifiedDirection, RunStatus, Size,
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use sdl2::event::Event;
@@ -212,18 +212,26 @@ fn update_robot(
     robots: &mut [Robot],
     robot_id: usize,
 ) -> Option<StateChange> {
-    if !robots[robot_id].alive {
+    if !robots[robot_id].alive || robots[robot_id].status == RunStatus::FinishedRunning {
         return None;
     }
 
+    robots[robot_id].cycle_count += 1;
     if robots[robot_id].cycle_count < robots[robot_id].cycle {
-        robots[robot_id].cycle_count += 1;
-        debug!("delaying {:?}", robots[robot_id].name);
+        debug!("delaying {:?} (cycle {}/{})",
+               robots[robot_id].name,
+               robots[robot_id].cycle_count,
+               robots[robot_id].cycle
+        );
         return None;
     }
     robots[robot_id].cycle_count = 0;
 
     debug!("executing {:?}", robots[robot_id].name);
+
+    if let Some(dir) = robots[robot_id].walk {
+        move_robot(&mut robots[robot_id], board, dir);
+    }
 
     let mut lines_run = 0;
     let mut mode = Relative::None;
@@ -743,9 +751,7 @@ fn update_robot(
         }
     }
 
-    if let Some(dir) = robots[robot_id].walk {
-        move_robot(&mut robots[robot_id], board, dir);
-    }
+    robots[robot_id].status = RunStatus::FinishedRunning;
 
     state_change
 }
@@ -950,6 +956,10 @@ fn update_board(
     board_id: usize,
     robots: &mut Vec<Robot>
 ) -> Option<StateChange> {
+    for robot in &mut *robots {
+        robot.status = RunStatus::NotRun;
+    }
+
     for y in 0..board.height {
         for x in 0..board.width {
             let level_idx = y * board.width + x;
