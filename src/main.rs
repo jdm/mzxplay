@@ -823,6 +823,7 @@ enum BuiltInLabel {
     Thud,
     Edge,
     Bombed,
+    JustEntered,
 }
 
 impl Into<ByteString> for BuiltInLabel {
@@ -831,6 +832,7 @@ impl Into<ByteString> for BuiltInLabel {
             BuiltInLabel::Thud => "thud",
             BuiltInLabel::Edge => "edge",
             BuiltInLabel::Bombed => "bombed",
+            BuiltInLabel::JustEntered => "justentered",
         })
     }
 }
@@ -1253,6 +1255,9 @@ fn run(world_path: &Path) {
                     board_id = id;
                     world.boards[board_id].player_pos = coord;
                 }
+            }
+            for robot in &mut world.board_robots[board_id] {
+                send_robot_to_label(robot, BuiltInLabel::JustEntered);
             }
         }
 
