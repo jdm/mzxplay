@@ -755,7 +755,7 @@ fn update_robot(
                         .rev()
                         .position(|c| *c == Command::LoopStart);
                     if let Some(idx) = start {
-                        robots[robot_id].current_line -= idx as u16 - 1;
+                        robots[robot_id].current_line -= idx as u16 + 1;
                     }
                     robots[robot_id].loop_count += 1;
                 }
