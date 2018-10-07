@@ -421,20 +421,32 @@ fn update_robot(
                 };
             }
 
-            Command::Set(ref s, ref n) => {
-                let val = n.resolve(counters, &robots[robot_id]) as i16;
+            Command::Set(ref s, ref n, ref n2) => {
+                let mut val = n.resolve(counters, &robots[robot_id]) as i16;
+                if let Some(ref n2) = *n2 {
+                    let upper = n2.resolve(counters, &robots[robot_id]) as i16;
+                    val = rand::random::<i16>() % upper + val;
+                }
                 counters.set(s.clone(), &mut robots[robot_id], val);
             }
 
-            Command::Dec(ref s, ref n) => {
-                let val = n.resolve(counters, &robots[robot_id]) as i16;
+            Command::Dec(ref s, ref n, ref n2) => {
+                let mut val = n.resolve(counters, &robots[robot_id]) as i16;
                 let initial = counters.get(s, &robots[robot_id]);
+                if let Some(ref n2) = *n2 {
+                    let upper = n2.resolve(counters, &robots[robot_id]) as i16;
+                    val = rand::random::<i16>() % upper + val;
+                }
                 counters.set(s.clone(), &mut robots[robot_id], initial - val);
             }
 
-            Command::Inc(ref s, ref n) => {
-                let val = n.resolve(counters, &robots[robot_id]) as i16;
+            Command::Inc(ref s, ref n, ref n2) => {
+                let mut val = n.resolve(counters, &robots[robot_id]) as i16;
                 let initial = counters.get(s, &robots[robot_id]);
+                if let Some(ref n2) = *n2 {
+                    let upper = n2.resolve(counters, &robots[robot_id]) as i16;
+                    val = rand::random::<i16>() % upper + val;
+                }
                 counters.set(s.clone(), &mut robots[robot_id], initial + val);
             }
 
