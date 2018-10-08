@@ -452,6 +452,24 @@ fn update_robot(
                 counters.set(s.clone(), &mut robots[robot_id], initial + val);
             }
 
+            Command::Multiply(ref s, ref n) => {
+                let mut val = n.resolve(counters, &robots[robot_id]) as i16;
+                let initial = counters.get(s, &robots[robot_id]);
+                counters.set(s.clone(), &mut robots[robot_id], initial * val);
+            }
+
+            Command::Divide(ref s, ref n) => {
+                let mut val = n.resolve(counters, &robots[robot_id]) as i16;
+                let initial = counters.get(s, &robots[robot_id]);
+                counters.set(s.clone(), &mut robots[robot_id], initial / val);
+            }
+
+            Command::Modulo(ref s, ref n) => {
+                let mut val = n.resolve(counters, &robots[robot_id]) as i16;
+                let initial = counters.get(s, &robots[robot_id]);
+                counters.set(s.clone(), &mut robots[robot_id], initial % val);
+            }
+
             Command::If(ref s, op, ref n, ref l) => {
                 let val = counters.get(s, &robots[robot_id]);
                 let cmp = n.resolve(counters, &robots[robot_id]) as i16;
