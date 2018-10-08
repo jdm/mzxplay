@@ -336,7 +336,9 @@ fn update_robot(
                 match *c {
                     Some(ref c) => {
                         let c = c.resolve(counters, &robots[robot_id]);
-                        state.palette.colors[c as usize].1 = intensity;
+                        if (c as usize) < state.palette.colors.len() {
+                            state.palette.colors[c as usize].1 = intensity;
+                        }
                     }
                     None => {
                         for &mut (_, ref mut i) in state.palette.colors.iter_mut() {
