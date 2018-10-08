@@ -768,7 +768,7 @@ fn update_robot(
 
             Command::LoopFor(ref n) => {
                 let n = n.resolve(counters, &robots[robot_id]);
-                if robots[robot_id].loop_count < n {
+                if (robots[robot_id].loop_count as u16) < n {
                     let start = robots[robot_id]
                         .program[0..robots[robot_id].current_line as usize]
                         .iter()
