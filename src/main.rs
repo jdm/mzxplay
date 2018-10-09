@@ -510,8 +510,11 @@ fn update_robot(
             }
 
             Command::IfCondition(ref condition, ref l, invert) => {
-                let result = robots[robot_id].is(condition, board);
-                if result || (!result && invert) {
+                let mut result = robots[robot_id].is(condition, board);
+                if invert {
+                    result = !result;
+                }
+                if result {
                     advance = !send_robot_to_label(&mut robots[robot_id], l);
                 }
             }
