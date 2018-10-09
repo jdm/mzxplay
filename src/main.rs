@@ -8,9 +8,10 @@ extern crate time;
 
 use libmzx::{
     Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Command, Thing,
-    WorldState, Counters, Resolve, Direction, Operator, ExtendedColorValue, ExtendedParam,
+    WorldState, Counters, Resolve, Operator, ExtendedColorValue, ExtendedParam,
     ColorValue, ParamValue, CharId, ByteString, Explosion, ExplosionResult, RelativePart,
-    SignedNumeric, Color as MzxColor, ModifiedDirection, RunStatus, Size,
+    SignedNumeric, Color as MzxColor, RunStatus, Size, dir_to_cardinal_dir,
+    adjust_coordinate,
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use sdl2::event::Event;
@@ -327,12 +328,15 @@ fn update_robot(
                 let r = r.resolve(counters, &robots[robot_id]) as u8;
                 let g = g.resolve(counters, &robots[robot_id]) as u8;
                 let b = b.resolve(counters, &robots[robot_id]) as u8;
+                if r > 63 || g > 63 || b > 63 {
+                    warn!("bad colors: {},{},{}", r, g, b);
+                }
                 state.palette.colors[c as usize].0 = MzxColor { r, g, b };
             }
 
             Command::ColorIntensity(ref c, ref n) => {
                 let n = n.resolve(counters, &robots[robot_id]);
-                let intensity = n as f32 / 100.;
+                let intensity = (n as f32 / 100.).min(1.0);
                 match *c {
                     Some(ref c) => {
                         let c = c.resolve(counters, &robots[robot_id]);
@@ -364,6 +368,18 @@ fn update_robot(
                         info!("Error opening palette {} ({})", path.display(), e);
                     }
                 }
+            }
+
+            Command::ViewportSize(ref w, ref h) => {
+                let w = w.resolve(counters, &robots[robot_id]) as u8;
+                let h = h.resolve(counters, &robots[robot_id]) as u8;
+                board.viewport_size = Size(w, h);
+            }
+
+            Command::Viewport(ref x, ref y) => {
+                let x = x.resolve(counters, &robots[robot_id]) as u8;
+                let y = y.resolve(counters, &robots[robot_id]) as u8;
+                board.upper_left_viewport = Coordinate(x, y);
             }
 
             Command::ResetView => {
@@ -427,7 +443,8 @@ fn update_robot(
                 let mut val = n.resolve(counters, &robots[robot_id]) as i16;
                 if let Some(ref n2) = *n2 {
                     let upper = n2.resolve(counters, &robots[robot_id]) as i16;
-                    val = rand::random::<i16>() % upper + val;
+                    let range = (upper - val).abs() as u16;
+                    val = (rand::random::<u16>() % range) as i16 + val;
                 }
                 counters.set(s.clone(), &mut robots[robot_id], val);
             }
@@ -437,7 +454,8 @@ fn update_robot(
                 let initial = counters.get(s, &robots[robot_id]);
                 if let Some(ref n2) = *n2 {
                     let upper = n2.resolve(counters, &robots[robot_id]) as i16;
-                    val = rand::random::<i16>() % upper + val;
+                    let range = (upper - val).abs() as u16;
+                    val = (rand::random::<u16>() % range) as i16 + val;
                 }
                 counters.set(s.clone(), &mut robots[robot_id], initial - val);
             }
@@ -447,7 +465,8 @@ fn update_robot(
                 let initial = counters.get(s, &robots[robot_id]);
                 if let Some(ref n2) = *n2 {
                     let upper = n2.resolve(counters, &robots[robot_id]) as i16;
-                    val = rand::random::<i16>() % upper + val;
+                    let range = (upper - val).abs() as u16;
+                    val = (rand::random::<u16>() % range) as i16 + val;
                 }
                 counters.set(s.clone(), &mut robots[robot_id], initial + val);
             }
@@ -482,6 +501,13 @@ fn update_robot(
                     Operator::GreaterThanEquals => val >= cmp,
                 };
                 if result {
+                    advance = !send_robot_to_label(&mut robots[robot_id], l);
+                }
+            }
+
+            Command::IfCondition(ref condition, ref l, invert) => {
+                let result = robots[robot_id].is(condition, board);
+                if result || (!result && invert) {
                     advance = !send_robot_to_label(&mut robots[robot_id], l);
                 }
             }
@@ -781,10 +807,13 @@ fn update_robot(
                 }
             }
 
-            Command::Label(_) => lines_run -= 1,
-            Command::ZappedLabel(_) => lines_run -= 1,
+            Command::Label(_) |
+            Command::ZappedLabel(_) |
+            Command::BlankLine => lines_run -= 1,
 
-            Command::CopyBlock(ref src_x, ref src_y, ref w, ref h, ref dst_x, ref dst_y) => {
+            Command::CopyBlock(ref src_x, ref src_y, ref w, ref h, ref dst_x, ref dst_y) |
+            Command::CopyOverlayBlock(ref src_x, ref src_y, ref w, ref h, ref dst_x, ref dst_y) => {
+                let overlay = if let Command::CopyOverlayBlock(..) = cmd { true } else { false };
                 let src = mode.resolve_xy(
                     src_x,
                     src_y,
@@ -801,7 +830,76 @@ fn update_robot(
                     &robots[robot_id],
                     RelativePart::Last
                 );
-                board.copy(src, Size(w, h), dest);
+                if overlay {
+                    board.copy_overlay(src, Size(w, h), dest);
+                } else {
+                    board.copy(src, Size(w, h), dest);
+                }
+            }
+
+            Command::WriteOverlay(ref c, ref s, ref x, ref y) => {
+                let pos = mode.resolve_xy(
+                    x,
+                    y,
+                    counters,
+                    &robots[robot_id],
+                    RelativePart::First,
+                );
+                let c = c.resolve(counters, &robots[robot_id]);
+                board.write_overlay(&pos, s, c.0);
+            }
+
+            Command::PutXY(ref color, ref thing, ref param, ref x, ref y) => {
+                let color = color.resolve(counters, &robots[robot_id]);
+                let param = param.resolve(counters, &robots[robot_id]);
+                let pos = mode.resolve_xy(
+                    x,
+                    y,
+                    counters,
+                    &robots[robot_id],
+                    RelativePart::First,
+                );
+
+                let color = match color {
+                    ExtendedColorValue::Known(c) =>
+                        c.0,
+                    // TODO: have a table of default foreground colors for things,
+                    //       get the current background color at destination.
+                    ExtendedColorValue::Unknown(Some(_), None) |
+                    ExtendedColorValue::Unknown(None, Some(_)) |
+                    ExtendedColorValue::Unknown(None, None) |
+                    ExtendedColorValue::Unknown(Some(_), Some(_)) =>
+                        0x07, //HACK
+                };
+
+                // TODO: have a table of default parameters for things.
+                let param = match param {
+                    ExtendedParam::Specific(p) => p.0,
+                    ExtendedParam::Any => 0x00, //HACK
+                };
+
+                board.put_at(&pos, thing.to_u8().unwrap(), color, param);
+            }
+
+            Command::CopyRobotXY(ref x, ref y) => {
+                let pos = mode.resolve_xy(
+                    x,
+                    y,
+                    counters,
+                    &robots[robot_id],
+                    RelativePart::First,
+                );
+
+                let &(thing, color, param) = board.level_at(&pos);
+                if Thing::from_u8(thing).unwrap().is_robot() {
+                    // FIXME: accommodate global robot
+                    let source_id = (param - 1) as usize;
+                    robots[robot_id] = Robot::copy_from(
+                        &robots[source_id],
+                        robots[robot_id].position
+                    );
+                    board.level_at_mut(&pos).1 = color;
+                }
             }
 
             ref cmd => warn!("ignoring {:?}", cmd),
@@ -869,76 +967,6 @@ fn send_robot_to_label<S: Into<ByteString>>(robot: &mut Robot, label: S) -> bool
     } else {
         false
     }
-}
-
-fn dir_to_cardinal_dir(robot: &Robot, dir: &ModifiedDirection) -> Option<CardinalDirection> {
-    // TODO: blocked, not blocked, etc.
-    let resolved = match dir.dir {
-        Direction::North => Some(CardinalDirection::North),
-        Direction::South => Some(CardinalDirection::South),
-        Direction::East => Some(CardinalDirection::East),
-        Direction::West => Some(CardinalDirection::West),
-        Direction::Idle | Direction::NoDir => None,
-        Direction::Flow => robot.walk.clone(),
-        Direction::RandNs => Some(if rand::random::<bool>() == true {
-            CardinalDirection::North
-        } else {
-            CardinalDirection::South
-        }),
-        Direction::RandNe => Some(if rand::random::<bool>() == true {
-            CardinalDirection::North
-        } else {
-            CardinalDirection::East
-        }),
-        Direction::RandEw => Some(if rand::random::<bool>() == true {
-            CardinalDirection::East
-        } else {
-            CardinalDirection::West
-        }),
-        Direction::Anydir | Direction::RandAny => Some(match rand::random::<u8>() % 4 {
-            0 => CardinalDirection::North,
-            1 => CardinalDirection::South,
-            2 => CardinalDirection::East,
-            3 => CardinalDirection::West,
-            _ => unreachable!(),
-        }),
-        Direction::Seek | Direction::Beneath | Direction::RandB | Direction::RandNb => None, //TODO
-    };
-    // TODO: cw, random perpendicular, randnot
-    if dir.opp {
-        resolved.map(|d| match d {
-            CardinalDirection::North => CardinalDirection::South,
-            CardinalDirection::South => CardinalDirection::North,
-            CardinalDirection::East => CardinalDirection::West,
-            CardinalDirection::West => CardinalDirection::East,
-        })
-    } else {
-        resolved
-    }
-}
-
-fn adjust_coordinate(
-    coord: Coordinate<u16>,
-    board: &Board,
-    dir: CardinalDirection
-) -> Option<Coordinate<u16>> {
-    let (xdiff, ydiff) = match dir {
-        CardinalDirection::North => (0, -1),
-        CardinalDirection::South => (0, 1),
-        CardinalDirection::East => (1, 0),
-        CardinalDirection::West => (-1, 0),
-    };
-    if (coord.0 as i16 + xdiff < 0) ||
-        ((coord.0 as i16 + xdiff) as usize >= board.width) ||
-        (coord.1 as i16 + ydiff < 0) ||
-        ((coord.1 as i16 + ydiff) as usize >= board.height)
-    {
-        return None;
-    }
-    Some(Coordinate(
-        (coord.0 as i16 + xdiff) as u16,
-        (coord.1 as i16 + ydiff) as u16,
-    ))
 }
 
 enum MoveResult {
@@ -1263,21 +1291,28 @@ fn run(world_path: &Path) {
         );
 
         if let Some(change) = change {
-            match change {
+            let did_change = match change {
                 StateChange::Teleport(board, coord) => {
                     let id = world.boards.iter().position(|b| b.title == board);
                     if let Some(id) = id {
                         board_id = id;
                         world.boards[board_id].player_pos = coord;
+                        true
+                    } else {
+                        warn!("Couldn't find board {:?}", board);
+                        false
                     }
                 }
                 StateChange::Restore(id, coord) => {
                     board_id = id;
                     world.boards[board_id].player_pos = coord;
+                    true
                 }
-            }
-            for robot in &mut world.board_robots[board_id] {
-                send_robot_to_label(robot, BuiltInLabel::JustEntered);
+            };
+            if did_change {
+                for robot in &mut world.board_robots[board_id] {
+                    send_robot_to_label(robot, BuiltInLabel::JustEntered);
+                }
             }
         }
 

@@ -11,3 +11,6 @@ num-traits = "0.2"
 rand = "0.4"
 sdl2 = "0.31"
 time = "0.1"
+
+[profile.dev]
+codegen-units = 1
