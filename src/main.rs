@@ -1310,7 +1310,46 @@ fn run(world_path: &Path) {
             }
         }
 
-        let _result = process_input(&mut world.boards[board_id], &input_state);
+        let result = process_input(&mut world.boards[board_id], &input_state);
+        match result {
+            Some(InputResult::ExitBoard(dir)) => {
+                let id = {
+                    let board = &world.boards[board_id];
+                    match dir {
+                        CardinalDirection::North => board.exits.0,
+                        CardinalDirection::South => board.exits.1,
+                        CardinalDirection::East => board.exits.2,
+                        CardinalDirection::West => board.exits.3,
+                    }
+                };
+                if let Some(id) = id {
+                    let old_player_pos = world.boards[board_id].player_pos;
+                    board_id = id.0 as usize;
+                    let board = &mut world.boards[board_id];
+                    board.player_pos = match dir {
+                        CardinalDirection::North =>
+                            Coordinate(old_player_pos.0, board.height as u16 - 1),
+                        CardinalDirection::South =>
+                            Coordinate(old_player_pos.0, 0),
+                        CardinalDirection::East =>
+                            Coordinate(0, old_player_pos.1),
+                        CardinalDirection::West =>
+                            Coordinate(board.width as u16 - 1, old_player_pos.1),
+                    };
+                    //TODO: justentered
+                } else {
+                    warn!("Edge of board with no exit.");
+                }
+            }
+            Some(InputResult::Collide(pos)) => {
+                warn!("ignoring collision with {:?} at {:?}",
+                      world.boards[board_id].thing_at(&pos),
+                      pos
+                );
+            }
+            None => (),
+        }
+
         let change = update_board(
             &mut world.state,
             world_path,
