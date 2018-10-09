@@ -54,6 +54,21 @@ impl<'a> Renderer for SdlRenderer<'a> {
     }
 }
 
+fn reset_view(board: &mut Board) {
+    let vwidth = board.viewport_size.0 as u16;
+    let vheight = board.viewport_size.1 as u16;
+
+    let xpos = (board.player_pos.0.checked_sub(vwidth / 2))
+        .unwrap_or(0)
+        .min(board.width as u16 - vwidth);
+
+    let ypos = (board.player_pos.1.checked_sub(vheight / 2))
+        .unwrap_or(0)
+        .min(board.height as u16 - vheight);
+
+    board.scroll_offset = Coordinate(xpos, ypos);
+}
+
 struct InputState {
     left_pressed: bool,
     right_pressed: bool,
@@ -63,17 +78,22 @@ struct InputState {
     _to_process: Option<Keycode>,
 }
 
+enum GameStateChange {
+    BeginGame,
+}
+
 fn handle_key_input(
     input_state: &mut InputState,
     _timestamp: u32,
     keycode: Option<Keycode>,
     _keymod: Mod,
     _repeat: bool,
-    down: bool
-) {
+    down: bool,
+    is_title_screen: bool,
+) -> Option<GameStateChange> {
     let keycode = match keycode {
         Some(k) => k,
-        None => return,
+        None => return None,
     };
     match keycode {
         Keycode::Up => input_state.up_pressed = down,
@@ -81,8 +101,11 @@ fn handle_key_input(
         Keycode::Left => input_state.left_pressed = down,
         Keycode::Right => input_state.right_pressed = down,
         Keycode::Space => input_state.space_pressed = down,
+        Keycode::P if down && is_title_screen =>
+            return Some(GameStateChange::BeginGame),
         _ => (),
     }
+    None
 }
 
 enum InputResult {
@@ -383,26 +406,7 @@ fn update_robot(
             }
 
             Command::ResetView => {
-                let vwidth = board.viewport_size.0 as u16;
-                let vheight = board.viewport_size.1 as u16;
-
-                let xpos = if board.player_pos.0 < vwidth / 2 {
-                    0
-                } else if board.player_pos.0 > board.width as u16 - vwidth / 2 {
-                    board.width as u16 - vwidth
-                } else {
-                    board.player_pos.0 - vwidth / 2
-                };
-
-                let ypos = if board.player_pos.1 < vheight / 2 {
-                    0
-                } else if board.player_pos.1 > board.height as u16 - vheight / 2 {
-                    board.height as u16 - vheight
-                } else {
-                    board.player_pos.1 - vheight / 2
-                };
-
-                board.scroll_offset = Coordinate(xpos, ypos);
+                reset_view(board);
             }
 
             Command::ScrollViewXY(ref x, ref y) => {
@@ -1249,7 +1253,7 @@ fn run(world_path: &Path) {
     let mut events = sdl_context.event_pump().unwrap();
 
     let mut board_id = 0;
-    let is_title_screen = true;
+    let mut is_title_screen = true;
     const GAME_SPEED: u64 = 3;
 
     let mut input_state = InputState {
@@ -1264,19 +1268,42 @@ fn run(world_path: &Path) {
     let mut counters = Counters::new();
 
     'mainloop: loop {
+        let orig_player_pos = world.boards[board_id].player_pos;
+
         let start = time::precise_time_ns();
         for event in events.poll_iter() {
-            match event {
+            let change = match event {
                 Event::Quit{..} |
                 Event::KeyDown {keycode: Option::Some(Keycode::Escape), ..} =>
                     break 'mainloop,
                 Event::KeyDown {timestamp, keycode, keymod, repeat, ..} => {
-                    handle_key_input(&mut input_state, timestamp, keycode, keymod, repeat, true);
+                    handle_key_input(
+                        &mut input_state,
+                        timestamp,
+                        keycode,
+                        keymod,
+                        repeat,
+                        true,
+                        is_title_screen,
+                    )
                 }
                 Event::KeyUp {timestamp, keycode, keymod, repeat, ..} => {
-                    handle_key_input(&mut input_state, timestamp, keycode, keymod, repeat, false);
+                    handle_key_input(
+                        &mut input_state,
+                        timestamp,
+                        keycode,
+                        keymod,
+                        repeat,
+                        false,
+                        is_title_screen,
+                    )
                 }
-                _ => {}
+                _ => None,
+            };
+            if let Some(GameStateChange::BeginGame) = change {
+                board_id = world.starting_board_number.0 as usize;
+                is_title_screen = false;
+                //TODO: justentered
             }
         }
 
@@ -1314,6 +1341,10 @@ fn run(world_path: &Path) {
                     send_robot_to_label(robot, BuiltInLabel::JustEntered);
                 }
             }
+        }
+
+        if world.boards[board_id].player_pos != orig_player_pos {
+            reset_view(&mut world.boards[board_id]);
         }
 
         {
