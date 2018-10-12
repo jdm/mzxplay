@@ -1250,6 +1250,18 @@ fn update_board(
     None
 }
 
+fn enter_board(board: &mut Board, player_pos: Coordinate<u16>, robots: &mut [Robot]) {
+    let old_pos = board.player_pos;
+    if old_pos != player_pos {
+        board.move_level_to(&old_pos, &player_pos);
+    }
+    board.player_pos = player_pos;
+
+    for robot in robots {
+        send_robot_to_label(robot, BuiltInLabel::JustEntered);
+    }
+}
+
 fn run(world_path: &Path) {
     let world_data = match File::open(&world_path) {
         Ok(mut file) => {
@@ -1305,7 +1317,7 @@ fn run(world_path: &Path) {
     let mut counters = Counters::new();
 
     'mainloop: loop {
-        let orig_player_pos = world.boards[board_id].player_pos;
+        let mut orig_player_pos = world.boards[board_id].player_pos;
 
         let start = time::precise_time_ns();
         for event in events.poll_iter() {
@@ -1338,9 +1350,11 @@ fn run(world_path: &Path) {
                 _ => None,
             };
             if let Some(GameStateChange::BeginGame) = change {
-                board_id = world.starting_board_number.0 as usize;
                 is_title_screen = false;
-                //TODO: justentered
+                board_id = world.starting_board_number.0 as usize;
+                let pos = world.boards[board_id].player_pos;
+                orig_player_pos = pos;
+                enter_board(&mut world.boards[board_id], pos, &mut world.board_robots[board_id]);
             }
         }
 
@@ -1360,7 +1374,7 @@ fn run(world_path: &Path) {
                     let old_player_pos = world.boards[board_id].player_pos;
                     board_id = id.0 as usize;
                     let board = &mut world.boards[board_id];
-                    board.player_pos = match dir {
+                    let player_pos = match dir {
                         CardinalDirection::North =>
                             Coordinate(old_player_pos.0, board.height as u16 - 1),
                         CardinalDirection::South =>
@@ -1370,7 +1384,7 @@ fn run(world_path: &Path) {
                         CardinalDirection::West =>
                             Coordinate(board.width as u16 - 1, old_player_pos.1),
                     };
-                    //TODO: justentered
+                    enter_board(board, player_pos, &mut world.board_robots[board_id]);
                 } else {
                     warn!("Edge of board with no exit.");
                 }
@@ -1394,28 +1408,23 @@ fn run(world_path: &Path) {
         );
 
         if let Some(change) = change {
-            let did_change = match change {
+            let new_board = match change {
                 StateChange::Teleport(board, coord) => {
                     let id = world.boards.iter().position(|b| b.title == board);
                     if let Some(id) = id {
-                        board_id = id;
-                        world.boards[board_id].player_pos = coord;
-                        true
+                        Some((id, coord))
                     } else {
                         warn!("Couldn't find board {:?}", board);
-                        false
+                        None
                     }
                 }
                 StateChange::Restore(id, coord) => {
-                    board_id = id;
-                    world.boards[board_id].player_pos = coord;
-                    true
+                    Some((id, coord))
                 }
             };
-            if did_change {
-                for robot in &mut world.board_robots[board_id] {
-                    send_robot_to_label(robot, BuiltInLabel::JustEntered);
-                }
+            if let Some((id, coord)) = new_board {
+                board_id = id;
+                enter_board(&mut world.boards[id], coord, &mut world.board_robots[board_id]);
             }
         }
 
