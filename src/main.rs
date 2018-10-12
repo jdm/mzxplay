@@ -867,25 +867,19 @@ fn update_robot(
                     RelativePart::First,
                 );
 
-                let color = match color {
-                    ExtendedColorValue::Known(c) =>
-                        c.0,
-                    // TODO: have a table of default foreground colors for things,
-                    //       get the current background color at destination.
-                    ExtendedColorValue::Unknown(Some(_), None) |
-                    ExtendedColorValue::Unknown(None, Some(_)) |
-                    ExtendedColorValue::Unknown(None, None) |
-                    ExtendedColorValue::Unknown(Some(_), Some(_)) =>
-                        0x07, //HACK
-                };
+                put_thing(board, color, *thing, param, pos);
+            }
 
-                // TODO: have a table of default parameters for things.
-                let param = match param {
-                    ExtendedParam::Specific(p) => p.0,
-                    ExtendedParam::Any => 0x00, //HACK
-                };
-
-                board.put_at(&pos, thing.to_u8().unwrap(), color, param);
+            Command::PutDir(ref color, ref thing, ref param, ref dir) => {
+                let color = color.resolve(counters, &robots[robot_id]);
+                let param = param.resolve(counters, &robots[robot_id]);
+                let dir = dir_to_cardinal_dir(&robots[robot_id], dir);
+                if let Some(dir) = dir {
+                    let adjusted = adjust_coordinate(robots[robot_id].position, board, dir);
+                    if let Some(coord) = adjusted {
+                        put_thing(board, color, *thing, param, coord);
+                    }
+                }
             }
 
             Command::CopyRobotXY(ref x, ref y) => {
@@ -897,15 +891,18 @@ fn update_robot(
                     RelativePart::First,
                 );
 
-                let &(thing, color, param) = board.level_at(&pos);
+                let &(thing, _color, param) = board.level_at(&pos);
                 if Thing::from_u8(thing).unwrap().is_robot() {
                     // FIXME: accommodate global robot
                     let source_id = (param - 1) as usize;
-                    robots[robot_id] = Robot::copy_from(
-                        &robots[source_id],
-                        robots[robot_id].position
-                    );
-                    board.level_at_mut(&pos).1 = color;
+                    copy_robot(source_id, robot_id, robots, board);
+                }
+            }
+
+            Command::CopyRobotNamed(ref name) => {
+                let source = robots.iter().position(|r| &r.name == name);
+                if let Some(source) = source {
+                    copy_robot(source, robot_id, robots, board);
                 }
             }
 
@@ -928,6 +925,43 @@ fn update_robot(
     robots[robot_id].status = RunStatus::FinishedRunning;
 
     state_change
+}
+
+fn put_thing(
+    board: &mut Board,
+    color: ExtendedColorValue,
+    thing: Thing,
+    param: ExtendedParam,
+    pos: Coordinate<u16>
+) {
+    let color = match color {
+        ExtendedColorValue::Known(c) =>
+            c.0,
+        // TODO: have a table of default foreground colors for things,
+        //       get the current background color at destination.
+        ExtendedColorValue::Unknown(Some(_), None) |
+        ExtendedColorValue::Unknown(None, Some(_)) |
+        ExtendedColorValue::Unknown(None, None) |
+        ExtendedColorValue::Unknown(Some(_), Some(_)) =>
+            0x07, //HACK
+    };
+
+    // TODO: have a table of default parameters for things.
+    let param = match param {
+        ExtendedParam::Specific(p) => p.0,
+        ExtendedParam::Any => 0x00, //HACK
+    };
+
+    board.put_at(&pos, thing.to_u8().unwrap(), color, param);
+}
+
+fn copy_robot(source_id: usize, robot_id: usize, robots: &mut [Robot], board: &mut Board) {
+    let color = board.level_at(&robots[source_id].position).1;
+    board.level_at_mut(&robots[robot_id].position).1 = color;
+    robots[robot_id] = Robot::copy_from(
+        &robots[source_id],
+        robots[robot_id].position
+    );
 }
 
 enum BuiltInCounter {
