@@ -30,6 +30,7 @@ use std::process::exit;
 use std::time::Duration;
 
 //TODO: deal with sending a robot to a label while in the middle of a multi-cycle command
+//TODO: deal with a robot being deleted by copy block/put/etc. operation
 
 struct SdlRenderer<'a> {
     canvas: &'a mut Canvas<Window>,
