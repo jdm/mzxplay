@@ -203,7 +203,7 @@ impl Relative {
     ) -> Coordinate<u16> {
         let x = self.resolve(x_value, counters, context, part, CoordinatePart::X);
         let y = self.resolve(y_value, counters, context, part, CoordinatePart::Y);
-        Coordinate(x as u16, y as u16)
+        Coordinate(x.max(0) as u16, y.max(0) as u16)
     }
 
     fn resolve(
@@ -822,15 +822,27 @@ fn update_robot(
             Command::CopyBlock(ref src_x, ref src_y, ref w, ref h, ref dst_x, ref dst_y) |
             Command::CopyOverlayBlock(ref src_x, ref src_y, ref w, ref h, ref dst_x, ref dst_y) => {
                 let overlay = if let Command::CopyOverlayBlock(..) = cmd { true } else { false };
-                let src = mode.resolve_xy(
+                let mut src = mode.resolve_xy(
                     src_x,
                     src_y,
                     counters,
                     &robots[robot_id],
                     RelativePart::First
                 );
-                let w = w.resolve(counters, &robots[robot_id]);
-                let h = h.resolve(counters, &robots[robot_id]);
+                if src.0 as usize > board.width {
+                    src.0 = (board.width - 1) as u16;
+                }
+                if src.1 as usize > board.height {
+                    src.1 = (board.height - 1) as u16;
+                }
+
+                let mut w = w.resolve(counters, &robots[robot_id])
+                    .max(1)
+                    .min(board.width as u16 - src.0);
+                let mut h = h.resolve(counters, &robots[robot_id]).max(1)
+                    .max(1)
+                    .min(board.height as u16 - src.1);
+
                 let dest = mode.resolve_xy(
                     dst_x,
                     dst_y,
@@ -838,6 +850,13 @@ fn update_robot(
                     &robots[robot_id],
                     RelativePart::Last
                 );
+                if dest.0 + w > board.width as u16 {
+                    w = (board.width as i16 - dest.0 as i16).max(0) as u16;
+                }
+                if dest.1 + h > board.height as u16 {
+                    h = (board.height as i16 - dest.1 as i16).max(0) as u16;
+                }
+
                 if overlay {
                     board.copy_overlay(src, Size(w, h), dest);
                 } else {
