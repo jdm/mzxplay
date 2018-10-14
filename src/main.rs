@@ -830,6 +830,7 @@ fn update_robot(
 
             Command::Label(_) |
             Command::ZappedLabel(_) |
+            Command::Comment(_) |
             Command::BlankLine => lines_run -= 1,
 
             Command::CopyBlock(ref src_x, ref src_y, ref w, ref h, ref dst_x, ref dst_y) |
