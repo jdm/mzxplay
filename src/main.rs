@@ -1323,7 +1323,7 @@ fn run(world_path: &Path) {
 
     let mut board_id = 0;
     let mut is_title_screen = true;
-    const GAME_SPEED: u64 = 3;
+    const GAME_SPEED: u64 = 4;
 
     let mut input_state = InputState {
         left_pressed: false,
