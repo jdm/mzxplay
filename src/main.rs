@@ -520,6 +520,19 @@ fn update_robot(
                 }
             }
 
+            Command::IfThingXY(ref color, ref thing, ref param, ref x, ref y, ref l) => {
+                let color = color.resolve(counters, &robots[robot_id]);
+                let param = param.resolve(counters, &robots[robot_id]);
+                let pos = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
+                let &(board_thing, board_color, board_param) = board.level_at(&pos);
+                if board_thing == thing.to_u8().unwrap() &&
+                    color.matches(ColorValue(board_color)) &&
+                    param.matches(ParamValue(board_param))
+                {
+                    advance = !send_robot_to_label(&mut robots[robot_id], l);
+                }
+            }
+
             Command::Change(ref c1, ref t1, ref p1, ref c2, ref t2, ref p2) => {
                 let c1 = c1.resolve(counters, &robots[robot_id]);
                 let c2 = c2.resolve(counters, &robots[robot_id]);
