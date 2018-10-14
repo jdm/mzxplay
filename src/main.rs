@@ -112,6 +112,7 @@ fn handle_key_input(
 enum InputResult {
     ExitBoard(CardinalDirection),
     Collide(Coordinate<u16>),
+    Transport(u8, u8, u8),
 }
 
 fn process_input(
@@ -162,6 +163,12 @@ fn process_input(
         }
         board.move_level(&player_pos, xdiff, ydiff);
         board.player_pos = new_player_pos;
+
+        let under_thing = board.under_thing_at(&board.player_pos);
+        if under_thing == Thing::Cave || under_thing == Thing::Stairs {
+            let &(under_id, under_color, under_param) = board.under_at(&board.player_pos);
+            return Some(InputResult::Transport(under_id, under_color, under_param));
+        }
     }
 
     None
@@ -1421,6 +1428,15 @@ fn run(world_path: &Path) {
                     enter_board(board, player_pos, &mut world.board_robots[board_id]);
                 } else {
                     warn!("Edge of board with no exit.");
+                }
+            }
+            Some(InputResult::Transport(id, color, dest_board_id)) => {
+                let dest_board = &mut world.boards[dest_board_id as usize];
+                if let Some(coord) = dest_board.find(id, color) {
+                    board_id = dest_board_id as usize;
+                    enter_board(dest_board, coord, &mut world.board_robots[dest_board_id as usize]);
+                } else {
+                    warn!("Couldn't find destination in {:?}", dest_board.title);
                 }
             }
             Some(InputResult::Collide(pos)) => {
