@@ -11,7 +11,7 @@ use libmzx::{
     WorldState, Counters, Resolve, Operator, ExtendedColorValue, ExtendedParam,
     ColorValue, ParamValue, CharId, ByteString, Explosion, ExplosionResult, RelativePart,
     SignedNumeric, Color as MzxColor, RunStatus, Size, dir_to_cardinal_dir,
-    adjust_coordinate,
+    adjust_coordinate, KeyPress,
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use sdl2::event::Event;
@@ -70,12 +70,14 @@ fn reset_view(board: &mut Board) {
     board.scroll_offset = Coordinate(xpos, ypos);
 }
 
+#[derive(Default)]
 struct InputState {
     left_pressed: bool,
     right_pressed: bool,
     up_pressed: bool,
     down_pressed: bool,
     space_pressed: bool,
+    delete_pressed: bool,
     _to_process: Option<Keycode>,
 }
 
@@ -102,6 +104,7 @@ fn handle_key_input(
         Keycode::Left => input_state.left_pressed = down,
         Keycode::Right => input_state.right_pressed = down,
         Keycode::Space => input_state.space_pressed = down,
+        Keycode::Delete => input_state.delete_pressed = down,
         Keycode::P if down && is_title_screen =>
             return Some(GameStateChange::BeginGame),
         _ => (),
@@ -113,6 +116,24 @@ enum InputResult {
     ExitBoard(CardinalDirection),
     Collide(Coordinate<u16>),
     Transport(u8, u8, u8),
+}
+
+fn convert_input(input_state: &InputState) -> Option<KeyPress> {
+    Some(if input_state.up_pressed {
+        KeyPress::Up
+    } else if input_state.down_pressed {
+        KeyPress::Down
+    } else if input_state.left_pressed {
+        KeyPress::Left
+    } else if input_state.right_pressed {
+        KeyPress::Right
+    } else if input_state.space_pressed {
+        KeyPress::Space
+    } else if input_state.delete_pressed {
+        KeyPress::Delete
+    } else {
+        return None;
+    })
 }
 
 fn process_input(
@@ -237,6 +258,7 @@ impl Relative {
 
 fn update_robot(
     state: &mut WorldState,
+    key: Option<KeyPress>,
     world_path: &Path,
     counters: &mut Counters,
     board: &mut Board,
@@ -518,7 +540,7 @@ fn update_robot(
             }
 
             Command::IfCondition(ref condition, ref l, invert) => {
-                let mut result = robots[robot_id].is(condition, board);
+                let mut result = robots[robot_id].is(condition, board, key);
                 if invert {
                     result = !result;
                 }
@@ -536,6 +558,13 @@ fn update_robot(
                     color.matches(ColorValue(board_color)) &&
                     param.matches(ParamValue(board_param))
                 {
+                    advance = !send_robot_to_label(&mut robots[robot_id], l);
+                }
+            }
+
+            Command::IfPlayerXY(ref x, ref y, ref l) => {
+                let pos = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
+                if board.player_pos == pos {
                     advance = !send_robot_to_label(&mut robots[robot_id], l);
                 }
             }
@@ -1131,6 +1160,7 @@ enum StateChange {
 
 fn update_board(
     state: &mut WorldState,
+    key: Option<KeyPress>,
     world_path: &Path,
     counters: &mut Counters,
     board: &mut Board,
@@ -1151,6 +1181,7 @@ fn update_board(
                     let robot_id = board.level[level_idx].2 - 1;
                     let change = update_robot(
                         state,
+                        key,
                         world_path,
                         counters,
                         board,
@@ -1346,15 +1377,7 @@ fn run(world_path: &Path) {
     let mut is_title_screen = true;
     const GAME_SPEED: u64 = 4;
 
-    let mut input_state = InputState {
-        left_pressed: false,
-        right_pressed: false,
-        up_pressed: false,
-        down_pressed: false,
-        space_pressed: false,
-        _to_process: None,
-    };
-
+    let mut input_state = InputState::default();
     let mut counters = Counters::new();
 
     'mainloop: loop {
@@ -1399,6 +1422,7 @@ fn run(world_path: &Path) {
             }
         }
 
+        let key = convert_input(&input_state);
         let result = process_input(&mut world.boards[board_id], &input_state);
         match result {
             Some(InputResult::ExitBoard(dir)) => {
@@ -1450,6 +1474,7 @@ fn run(world_path: &Path) {
 
         let change = update_board(
             &mut world.state,
+            key,
             world_path,
             &mut counters,
             &mut world.boards[board_id],
