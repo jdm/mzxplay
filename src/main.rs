@@ -600,7 +600,7 @@ fn update_robot(
                     Operator::GreaterThanEquals => val >= cmp,
                 };
                 if result {
-                    advance = !send_robot_to_label(&mut robots[robot_id], l);
+                    advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
 
@@ -610,7 +610,7 @@ fn update_robot(
                     result = !result;
                 }
                 if result {
-                    advance = !send_robot_to_label(&mut robots[robot_id], l);
+                    advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
 
@@ -623,14 +623,14 @@ fn update_robot(
                     color.matches(ColorValue(board_color)) &&
                     param.matches(ParamValue(board_param))
                 {
-                    advance = !send_robot_to_label(&mut robots[robot_id], l);
+                    advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
 
             Command::IfPlayerXY(ref x, ref y, ref l) => {
                 let pos = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
                 if board.player_pos == pos {
-                    advance = !send_robot_to_label(&mut robots[robot_id], l);
+                    advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
 
@@ -726,7 +726,7 @@ fn update_robot(
             }
 
             Command::Goto(ref l) => {
-                advance = !send_robot_to_label(&mut robots[robot_id], l);
+                advance = !jump_robot_to_label(&mut robots[robot_id], l);
             }
 
             Command::Zap(ref l, ref n) => {
@@ -839,7 +839,7 @@ fn update_robot(
                 let dir = dir_to_cardinal_dir(&robots[robot_id], d);
                 if let Some(dir) = dir {
                     if move_robot(&mut robots[robot_id], board, dir) == Move::Blocked {
-                        send_robot_to_label(&mut robots[robot_id], l.clone());
+                        jump_robot_to_label(&mut robots[robot_id], l.clone());
                     }
                 }
             }
@@ -1041,6 +1041,14 @@ fn update_robot(
                 }
             }
 
+            Command::LockSelf => {
+                robots[robot_id].locked = true;
+            }
+
+            Command::UnlockSelf => {
+                robots[robot_id].locked = true;
+            }
+
             ref cmd => warn!("ignoring {:?}", cmd),
         }
 
@@ -1127,11 +1135,19 @@ impl Into<ByteString> for BuiltInLabel {
             BuiltInLabel::Edge => "edge",
             BuiltInLabel::Bombed => "bombed",
             BuiltInLabel::JustEntered => "justentered",
+            BuiltInLabel::Touch => "touch",
         })
     }
 }
 
 fn send_robot_to_label<S: Into<ByteString>>(robot: &mut Robot, label: S) -> bool {
+    if robot.locked {
+        return false;
+    }
+    jump_robot_to_label(robot, label)
+}
+
+fn jump_robot_to_label<S: Into<ByteString>>(robot: &mut Robot, label: S) -> bool {
     let label = label.into();
     let label_pos = robot
         .program
@@ -1199,15 +1215,15 @@ fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) -> M
     };
     match result {
         MoveResult::Edge => {
-            if !send_robot_to_label(robot, BuiltInLabel::Edge) {
-                send_robot_to_label(robot, BuiltInLabel::Thud);
+            if !jump_robot_to_label(robot, BuiltInLabel::Edge) {
+                jump_robot_to_label(robot, BuiltInLabel::Thud);
             }
             Move::Blocked
         }
         MoveResult::Move(new_pos) => {
             let thing = board.thing_at(&new_pos);
             if thing.is_solid() {
-                send_robot_to_label(robot, BuiltInLabel::Thud);
+                jump_robot_to_label(robot, BuiltInLabel::Thud);
                 Move::Blocked
             } else {
                 board.move_level_to(&robot.position, &new_pos);
