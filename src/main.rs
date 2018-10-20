@@ -1464,6 +1464,7 @@ fn run(world_path: &Path) {
 
     'mainloop: loop {
         let mut orig_player_pos = world.boards[board_id].player_pos;
+        let orig_board_id = board_id;
 
         let start = time::precise_time_ns();
         for event in events.poll_iter() {
@@ -1594,7 +1595,10 @@ fn run(world_path: &Path) {
             }
         }
 
-        if world.boards[board_id].player_pos != orig_player_pos && !world.state.scroll_locked {
+        if (world.boards[board_id].player_pos != orig_player_pos &&
+            !world.state.scroll_locked) ||
+            board_id != orig_board_id
+        {
             reset_view(&mut world.boards[board_id]);
         }
 
