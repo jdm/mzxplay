@@ -139,15 +139,16 @@ fn convert_input(input_state: &InputState) -> Option<KeyPress> {
 fn process_input(
     board: &mut Board,
     input_state: &InputState,
+    world_state: &WorldState,
 ) -> Option<InputResult> {
     let player_pos = board.player_pos;
-    let xdiff  = if input_state.left_pressed {
+    let xdiff  = if !world_state.player_locked_ew && input_state.left_pressed {
         if player_pos.0 > 0 {
             -1i8
         } else {
             return Some(InputResult::ExitBoard(CardinalDirection::West));
         }
-    } else if input_state.right_pressed {
+    } else if !world_state.player_locked_ew && input_state.right_pressed {
         if (player_pos.0 as usize) < board.width - 1 {
             1i8
         } else {
@@ -157,13 +158,13 @@ fn process_input(
         0i8
     };
 
-    let ydiff  = if xdiff == 0 && input_state.up_pressed {
+    let ydiff  = if !world_state.player_locked_ns && xdiff == 0 && input_state.up_pressed {
         if (player_pos.1 as usize) > 0 {
             -1
         } else {
             return Some(InputResult::ExitBoard(CardinalDirection::North));
         }
-    } else if xdiff == 0 && input_state.down_pressed {
+    } else if !world_state.player_locked_ns && xdiff == 0 && input_state.down_pressed {
         if (player_pos.1 as usize) < board.height - 1 {
             1
         } else {
@@ -355,6 +356,44 @@ fn update_robot(
                 state.charset.nth_mut(c).copy_from_slice(&bytes);
             }
 
+            Command::ScrollChar(ref c, ref dir) => {
+                let c = c.resolve(counters, &robots[robot_id]);
+                let (x, y) = match dir_to_cardinal_dir(&robots[robot_id], dir) {
+                    Some(CardinalDirection::North) => (0, -1),
+                    Some(CardinalDirection::South) => (0, 1),
+                    Some(CardinalDirection::East) => (1, 0),
+                    Some(CardinalDirection::West) => (0, -1),
+                    None => (0, 0),
+                };
+                let data = state.charset.nth_mut(c);
+                if x < 0 {
+                    for row in data.iter_mut() {
+                        let tmp = (*row & 0b1000_0000) >> 7;
+                        *row <<= 1;
+                        *row = (*row & 0b1111_1110) | tmp;
+                    }
+                } else if x > 0 {
+                    for row in data.iter_mut() {
+                        let tmp = (*row & 0b0000_0001) << 7;
+                        *row >>= 1;
+                        *row = (*row & 0b0111_1111) | tmp;
+                    }
+                }
+
+                if y < 0 {
+                    let tmp = data[0].clone();
+                    for i in 1..=data.len() {
+                        data[i - 1] = if i < data.len() { data[i] } else { tmp };
+                    }
+                } else if y > 0 {
+                    let tmp = data[data.len() - 1].clone();
+                    for i in (1..data.len()).rev() {
+                        data[i] = data[i - 1];
+                    }
+                    data[0] = tmp;
+                }
+            }
+
             Command::CopyChar(ref c1, ref c2) => {
                 let c1 = c1.resolve(counters, &robots[robot_id]);
                 let c2 = c2.resolve(counters, &robots[robot_id]);
@@ -439,6 +478,14 @@ fn update_robot(
                 reset_view(board);
             }
 
+            Command::LockScroll => {
+                state.scroll_locked = true;
+            }
+
+            Command::UnlockScroll => {
+                state.scroll_locked = false;
+            }
+
             Command::ScrollViewXY(ref x, ref y) => {
                 let x = x.resolve(counters, &robots[robot_id]);
                 let y = y.resolve(counters, &robots[robot_id]);
@@ -471,6 +518,24 @@ fn update_robot(
                     }
                     None => (),
                 };
+            }
+
+            Command::LockPlayer => {
+                state.player_locked_ns = true;
+                state.player_locked_ew = true;
+            }
+
+            Command::UnlockPlayer => {
+                state.player_locked_ns = false;
+                state.player_locked_ew = false;
+            }
+
+            Command::LockPlayerNS => {
+                state.player_locked_ns = true;
+            }
+
+            Command::LockPlayerEW => {
+                state.player_locked_ew = true;
             }
 
             Command::Set(ref s, ref n, ref n2) => {
@@ -1423,7 +1488,7 @@ fn run(world_path: &Path) {
         }
 
         let key = convert_input(&input_state);
-        let result = process_input(&mut world.boards[board_id], &input_state);
+        let result = process_input(&mut world.boards[board_id], &input_state, &world.state);
         match result {
             Some(InputResult::ExitBoard(dir)) => {
                 let id = {
@@ -1503,7 +1568,7 @@ fn run(world_path: &Path) {
             }
         }
 
-        if world.boards[board_id].player_pos != orig_player_pos {
+        if world.boards[board_id].player_pos != orig_player_pos && !world.state.scroll_locked {
             reset_view(&mut world.boards[board_id]);
         }
 
