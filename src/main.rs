@@ -1126,6 +1126,7 @@ enum BuiltInLabel {
     Edge,
     Bombed,
     JustEntered,
+    Touch,
 }
 
 impl Into<ByteString> for BuiltInLabel {
@@ -1545,10 +1546,19 @@ fn run(world_path: &Path) {
                 }
             }
             Some(InputResult::Collide(pos)) => {
-                warn!("ignoring collision with {:?} at {:?}",
-                      world.boards[board_id].thing_at(&pos),
-                      pos
-                );
+                let board = &world.boards[board_id];
+                let (_id, _color, param) = board.level_at(&pos);
+                let thing = board.thing_at(&pos);
+                match thing {
+                    Thing::Robot | Thing::RobotPushable => {
+                        // FIXME: Account for missing global robot
+                        let robot_id = (param - 1) as usize;
+                        send_robot_to_label(&mut world.board_robots[board_id][robot_id], BuiltInLabel::Touch);
+                    }
+
+                    _ => warn!("ignoring collision with {:?} at {:?}", thing, pos)
+
+                }
             }
             None => (),
         }
