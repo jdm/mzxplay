@@ -988,7 +988,8 @@ fn update_robot(
                     RelativePart::First,
                 );
                 let c = c.resolve(counters, &robots[robot_id]);
-                board.write_overlay(&pos, s, c.0);
+                let s = s.evaluate(counters, &robots[robot_id]);
+                board.write_overlay(&pos, &s, c.0);
             }
 
             Command::PutXY(ref color, ref thing, ref param, ref x, ref y) => {
@@ -1055,7 +1056,7 @@ fn update_robot(
             }
 
             Command::MessageLine(ref s) => {
-                board.message_line = s.clone();
+                board.message_line = s.evaluate(counters, &robots[robot_id]);
                 board.remaining_message_cycles = 80;
             }
 
