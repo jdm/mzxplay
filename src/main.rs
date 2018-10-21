@@ -1049,6 +1049,20 @@ fn update_robot(
                 robots[robot_id].locked = true;
             }
 
+            Command::MessageRow(ref n) => {
+                let n = n.resolve(counters, &robots[robot_id]);
+                board.message_row = n as u8;
+            }
+
+            Command::MessageLine(ref s) => {
+                board.message_line = s.clone();
+                board.remaining_message_cycles = 80;
+            }
+
+            Command::ClearMessage => {
+                board.remaining_message_cycles = 0;
+            }
+
             ref cmd => warn!("ignoring {:?}", cmd),
         }
 
@@ -1399,6 +1413,14 @@ fn update_board(
                 _ => (),
             }
         }
+    }
+
+    state.message_color += 1;
+    if state.message_color > 0x0F {
+        state.message_color = 0x01;
+    }
+    if board.remaining_message_cycles > 0 {
+        board.remaining_message_cycles -= 1;
     }
 
     None
