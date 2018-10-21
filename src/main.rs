@@ -243,7 +243,7 @@ impl Relative {
         part: RelativePart,
         coord_part: CoordinatePart,
     ) -> i16 {
-        let v = value.resolve(counters, context);
+        let v = value.resolve(counters, context) as i16;
         match *self {
             Relative::None => v,
             Relative::Coordinate(ref value_part, ref coord) => {
@@ -496,25 +496,25 @@ fn update_robot(
                 let n = n.resolve(counters, &robots[robot_id]);
                 let dir = dir_to_cardinal_dir(&robots[robot_id], dir);
                 match dir {
-                    Some(CardinalDirection::West) => if board.scroll_offset.0 < n {
+                    Some(CardinalDirection::West) => if (board.scroll_offset.0 as u32) < n {
                         board.scroll_offset.0 = 0;
                     } else {
-                        board.scroll_offset.0 -= n;
+                        board.scroll_offset.0 -= n as u16;
                     },
-                    Some(CardinalDirection::East) => if (board.scroll_offset.0 + n) as usize > board.width - board.viewport_size.0 as usize {
+                    Some(CardinalDirection::East) => if (board.scroll_offset.0 as u32 + n) as usize > board.width - board.viewport_size.0 as usize {
                         board.scroll_offset.0 = board.width as u16 - board.viewport_size.0 as u16;
                     } else {
-                        board.scroll_offset.0 += n;
+                        board.scroll_offset.0 += n as u16;
                     },
-                    Some(CardinalDirection::North) => if board.scroll_offset.1 < n {
+                    Some(CardinalDirection::North) => if (board.scroll_offset.1 as u32) < n {
                         board.scroll_offset.1 = 0;
                     } else {
-                        board.scroll_offset.1 -= n;
+                        board.scroll_offset.1 -= n as u16;
                     },
-                    Some(CardinalDirection::South) => if (board.scroll_offset.1 + n) as usize > board.height - board.viewport_size.1 as usize {
+                    Some(CardinalDirection::South) => if (board.scroll_offset.1 as u32 + n) as usize > board.height - board.viewport_size.1 as usize {
                         board.scroll_offset.1 = board.height as u16 - board.viewport_size.1 as u16;
                     } else {
-                        board.scroll_offset.1 += n;
+                        board.scroll_offset.1 += n as u16;
                     }
                     None => (),
                 };
@@ -539,58 +539,58 @@ fn update_robot(
             }
 
             Command::Set(ref s, ref n, ref n2) => {
-                let mut val = n.resolve(counters, &robots[robot_id]) as i16;
+                let mut val = n.resolve(counters, &robots[robot_id]) as i32;
                 if let Some(ref n2) = *n2 {
-                    let upper = n2.resolve(counters, &robots[robot_id]) as i16;
-                    let range = (upper - val).abs() as u16;
-                    val = (rand::random::<u16>() % range) as i16 + val;
+                    let upper = n2.resolve(counters, &robots[robot_id]) as i32;
+                    let range = (upper - val).abs() as u32;
+                    val = (rand::random::<u32>() % range) as i32 + val;
                 }
                 counters.set(s.clone(), &mut robots[robot_id], val);
             }
 
             Command::Dec(ref s, ref n, ref n2) => {
-                let mut val = n.resolve(counters, &robots[robot_id]) as i16;
+                let mut val = n.resolve(counters, &robots[robot_id]) as i32;
                 let initial = counters.get(s, &robots[robot_id]);
                 if let Some(ref n2) = *n2 {
-                    let upper = n2.resolve(counters, &robots[robot_id]) as i16;
-                    let range = (upper - val).abs() as u16;
-                    val = (rand::random::<u16>() % range) as i16 + val;
+                    let upper = n2.resolve(counters, &robots[robot_id]) as i32;
+                    let range = (upper - val).abs() as u32;
+                    val = (rand::random::<u32>() % range) as i32 + val;
                 }
-                counters.set(s.clone(), &mut robots[robot_id], initial - val);
+                counters.set(s.clone(), &mut robots[robot_id], initial.wrapping_sub(val));
             }
 
             Command::Inc(ref s, ref n, ref n2) => {
-                let mut val = n.resolve(counters, &robots[robot_id]) as i16;
+                let mut val = n.resolve(counters, &robots[robot_id]) as i32;
                 let initial = counters.get(s, &robots[robot_id]);
                 if let Some(ref n2) = *n2 {
-                    let upper = n2.resolve(counters, &robots[robot_id]) as i16;
-                    let range = (upper - val).abs() as u16;
-                    val = (rand::random::<u16>() % range) as i16 + val;
+                    let upper = n2.resolve(counters, &robots[robot_id]) as i32;
+                    let range = (upper - val).abs() as u32;
+                    val = (rand::random::<u32>() % range) as i32 + val;
                 }
-                counters.set(s.clone(), &mut robots[robot_id], initial + val);
+                counters.set(s.clone(), &mut robots[robot_id], initial.wrapping_add(val));
             }
 
             Command::Multiply(ref s, ref n) => {
-                let mut val = n.resolve(counters, &robots[robot_id]) as i16;
+                let mut val = n.resolve(counters, &robots[robot_id]) as i32;
                 let initial = counters.get(s, &robots[robot_id]);
-                counters.set(s.clone(), &mut robots[robot_id], initial * val);
+                counters.set(s.clone(), &mut robots[robot_id], initial.wrapping_mul(val));
             }
 
             Command::Divide(ref s, ref n) => {
-                let mut val = n.resolve(counters, &robots[robot_id]) as i16;
+                let mut val = n.resolve(counters, &robots[robot_id]) as i32;
                 let initial = counters.get(s, &robots[robot_id]);
                 counters.set(s.clone(), &mut robots[robot_id], initial / val);
             }
 
             Command::Modulo(ref s, ref n) => {
-                let mut val = n.resolve(counters, &robots[robot_id]) as i16;
+                let mut val = n.resolve(counters, &robots[robot_id]) as i32;
                 let initial = counters.get(s, &robots[robot_id]);
                 counters.set(s.clone(), &mut robots[robot_id], initial % val);
             }
 
             Command::If(ref s, op, ref n, ref l) => {
                 let val = counters.get(s, &robots[robot_id]);
-                let cmp = n.resolve(counters, &robots[robot_id]) as i16;
+                let cmp = n.resolve(counters, &robots[robot_id]) as i32;
                 let result = match op {
                     Operator::Equals => val == cmp,
                     Operator::NotEquals => val != cmp,
@@ -916,7 +916,7 @@ fn update_robot(
 
             Command::LoopFor(ref n) => {
                 let n = n.resolve(counters, &robots[robot_id]);
-                if (robots[robot_id].loop_count as u16) < n {
+                if (robots[robot_id].loop_count as u32) < n {
                     let start = robots[robot_id]
                         .program[0..robots[robot_id].current_line as usize]
                         .iter()
@@ -953,10 +953,10 @@ fn update_robot(
 
                 let mut w = w.resolve(counters, &robots[robot_id])
                     .max(1)
-                    .min(board.width as u16 - src.0);
+                    .min(board.width as u32 - src.0 as u32) as u16;
                 let mut h = h.resolve(counters, &robots[robot_id]).max(1)
                     .max(1)
-                    .min(board.height as u16 - src.1);
+                    .min(board.height as u32 - src.1 as u32) as u16;
 
                 let dest = mode.resolve_xy(
                     dst_x,
