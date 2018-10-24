@@ -600,6 +600,7 @@ fn update_robot(
                     Operator::GreaterThanEquals => val >= cmp,
                 };
                 if result {
+                    let l = l.evaluate(counters, &robots[robot_id]);
                     advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
@@ -610,6 +611,7 @@ fn update_robot(
                     result = !result;
                 }
                 if result {
+                    let l = l.evaluate(counters, &robots[robot_id]);
                     advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
@@ -623,6 +625,7 @@ fn update_robot(
                     color.matches(ColorValue(board_color)) &&
                     param.matches(ParamValue(board_param))
                 {
+                    let l = l.evaluate(counters, &robots[robot_id]);
                     advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
@@ -630,6 +633,7 @@ fn update_robot(
             Command::IfPlayerXY(ref x, ref y, ref l) => {
                 let pos = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
                 if board.player_pos == pos {
+                    let l = l.evaluate(counters, &robots[robot_id]);
                     advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
@@ -726,7 +730,8 @@ fn update_robot(
             }
 
             Command::Goto(ref l) => {
-                advance = !jump_robot_to_label(&mut robots[robot_id], l);
+                let l = l.evaluate(counters, &robots[robot_id]);
+                advance = !jump_robot_to_label(&mut robots[robot_id], &l);
             }
 
             Command::Zap(ref l, ref n) => {
@@ -759,8 +764,9 @@ fn update_robot(
             }
 
             Command::Send(ref r, ref l) => {
+                let r = r.evaluate(counters, &robots[robot_id]);
                 for (idx, robot) in robots.iter_mut().enumerate() {
-                    if r.as_ref() == b"all" || robot.name == *r {
+                    if r.as_ref() == b"all" || robot.name == r {
                         let did_send = send_robot_to_label(robot, l);
                         if idx == robot_id {
                             advance = !did_send;
