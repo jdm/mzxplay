@@ -1050,6 +1050,19 @@ fn update_robot(
                 robots[robot_id].locked = true;
             }
 
+            Command::MesgEdge(enabled) => {
+                state.message_edge = enabled;
+            }
+
+            Command::CenterMessage => {
+                board.message_col = None;
+            }
+
+            Command::MessageColumn(ref n) => {
+                let n = n.resolve(counters, &robots[robot_id]);
+                board.message_col = Some(n as u8);
+            }
+
             Command::MessageRow(ref n) => {
                 let n = n.resolve(counters, &robots[robot_id]);
                 board.message_row = n as u8;
