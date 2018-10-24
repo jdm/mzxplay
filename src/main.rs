@@ -98,6 +98,12 @@ fn handle_key_input(
         Some(k) => k,
         None => return None,
     };
+    if is_title_screen {
+        if down && keycode == Keycode::P {
+            return Some(GameStateChange::BeginGame);
+        }
+        return None;
+    }
     match keycode {
         Keycode::Up => input_state.up_pressed = down,
         Keycode::Down => input_state.down_pressed = down,
@@ -105,8 +111,6 @@ fn handle_key_input(
         Keycode::Right => input_state.right_pressed = down,
         Keycode::Space => input_state.space_pressed = down,
         Keycode::Delete => input_state.delete_pressed = down,
-        Keycode::P if down && is_title_screen =>
-            return Some(GameStateChange::BeginGame),
         _ => (),
     }
     None
