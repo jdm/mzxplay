@@ -1548,6 +1548,8 @@ fn run(world_path: &Path) {
                 let pos = world.boards[board_id].player_pos;
                 orig_player_pos = pos;
                 enter_board(&mut world.boards[board_id], pos, &mut world.board_robots[board_id]);
+                world.state.charset = world.state.initial_charset;
+                world.state.palette = world.state.initial_palette.clone();
             }
         }
 
