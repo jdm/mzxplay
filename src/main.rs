@@ -1456,6 +1456,7 @@ fn enter_board(board: &mut Board, player_pos: Coordinate<u16>, robots: &mut [Rob
         board.move_level_to(&old_pos, &player_pos);
     }
     board.player_pos = player_pos;
+    reset_view(board);
 
     for robot in robots {
         send_robot_to_label(robot, BuiltInLabel::JustEntered);
@@ -1510,7 +1511,6 @@ fn run(world_path: &Path) {
 
     'mainloop: loop {
         let mut orig_player_pos = world.boards[board_id].player_pos;
-        let orig_board_id = board_id;
 
         let start = time::precise_time_ns();
         for event in events.poll_iter() {
@@ -1610,6 +1610,12 @@ fn run(world_path: &Path) {
             None => (),
         }
 
+        if world.boards[board_id].player_pos != orig_player_pos &&
+            !world.state.scroll_locked
+        {
+            reset_view(&mut world.boards[board_id]);
+        }
+
         let change = update_board(
             &mut world.state,
             key,
@@ -1639,13 +1645,6 @@ fn run(world_path: &Path) {
                 board_id = id;
                 enter_board(&mut world.boards[id], coord, &mut world.board_robots[board_id]);
             }
-        }
-
-        if (world.boards[board_id].player_pos != orig_player_pos &&
-            !world.state.scroll_locked) ||
-            board_id != orig_board_id
-        {
-            reset_view(&mut world.boards[board_id]);
         }
 
         {
