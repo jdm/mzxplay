@@ -315,9 +315,13 @@ fn update_robot(
         match cmd {
             Command::End => advance = false,
 
-            Command::Die => {
-                board.remove_thing_at(&robots[robot_id].position);
+            Command::Die(as_item) => {
+                let pos = robots[robot_id].position;
+                board.remove_thing_at(&pos);
                 robots[robot_id].alive = false;
+                if as_item {
+                    board.player_pos = pos;
+                }
             }
 
             Command::Wait(ref n) => {
