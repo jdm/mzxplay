@@ -371,7 +371,7 @@ fn update_robot(
                     Some(CardinalDirection::North) => (0, -1),
                     Some(CardinalDirection::South) => (0, 1),
                     Some(CardinalDirection::East) => (1, 0),
-                    Some(CardinalDirection::West) => (0, -1),
+                    Some(CardinalDirection::West) => (-1, 0),
                     None => (0, 0),
                 };
                 let data = state.charset.nth_mut(c);
