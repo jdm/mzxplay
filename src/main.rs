@@ -84,6 +84,7 @@ struct InputState {
 
 enum GameStateChange {
     BeginGame,
+    Speed(u64),
 }
 
 fn handle_key_input(
@@ -112,6 +113,10 @@ fn handle_key_input(
         Keycode::Right => input_state.right_pressed = down,
         Keycode::Space => input_state.space_pressed = down,
         Keycode::Delete => input_state.delete_pressed = down,
+        Keycode::Num1 => return Some(GameStateChange::Speed(1)),
+        Keycode::Num2 => return Some(GameStateChange::Speed(2)),
+        Keycode::Num3 => return Some(GameStateChange::Speed(3)),
+        Keycode::Num4 => return Some(GameStateChange::Speed(4)),
         _ => (),
     }
     None
@@ -1539,7 +1544,7 @@ fn run(world_path: &Path) {
 
     let mut board_id = 0;
     let mut is_title_screen = true;
-    const GAME_SPEED: u64 = 4;
+    let mut game_speed: u64 = 4;
 
     let mut input_state = InputState::default();
     let mut counters = Counters::new();
@@ -1577,14 +1582,21 @@ fn run(world_path: &Path) {
                 }
                 _ => None,
             };
-            if let Some(GameStateChange::BeginGame) = change {
-                is_title_screen = false;
-                board_id = world.starting_board_number.0 as usize;
-                let pos = world.boards[board_id].player_pos;
-                orig_player_pos = pos;
-                enter_board(&mut world.boards[board_id], pos, &mut world.board_robots[board_id]);
-                world.state.charset = world.state.initial_charset;
-                world.state.palette = world.state.initial_palette.clone();
+            match change {
+                Some(GameStateChange::BeginGame) => {
+                    is_title_screen = false;
+                    board_id = world.starting_board_number.0 as usize;
+                    let pos = world.boards[board_id].player_pos;
+                    orig_player_pos = pos;
+                    enter_board(&mut world.boards[board_id], pos, &mut world.board_robots[board_id]);
+                    world.state.charset = world.state.initial_charset;
+                    world.state.palette = world.state.initial_palette.clone();
+                }
+                Some(GameStateChange::Speed(n)) => {
+                    println!("changing speed to {}", n);
+                    game_speed = n;
+                }
+                None => (),
             }
         }
 
@@ -1705,7 +1717,7 @@ fn run(world_path: &Path) {
 
         let now = time::precise_time_ns();
         let elapsed_ms = (now - start) / 1_000_000;
-        let total_ticks = (16 * (GAME_SPEED - 1)).checked_sub(elapsed_ms);
+        let total_ticks = (16 * (game_speed - 1)).checked_sub(elapsed_ms);
         if let Some(diff) = total_ticks {
             ::std::thread::sleep(Duration::from_millis(diff));
         }
