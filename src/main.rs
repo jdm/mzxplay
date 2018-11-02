@@ -25,6 +25,7 @@ use sdl2::video::Window;
 use std::env;
 use std::fs::File;
 use std::io::Read;
+use std::ops::Deref;
 use std::path::Path;
 use std::process::exit;
 use std::time::Duration;
@@ -608,7 +609,7 @@ fn update_robot(
                     Operator::GreaterThanEquals => val >= cmp,
                 };
                 if result {
-                    let l = l.evaluate(counters, &robots[robot_id]);
+                    let l = l.eval(counters, &robots[robot_id]);
                     advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
@@ -619,7 +620,7 @@ fn update_robot(
                     result = !result;
                 }
                 if result {
-                    let l = l.evaluate(counters, &robots[robot_id]);
+                    let l = l.eval(counters, &robots[robot_id]);
                     advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
@@ -633,7 +634,7 @@ fn update_robot(
                     color.matches(ColorValue(board_color)) &&
                     param.matches(ParamValue(board_param))
                 {
-                    let l = l.evaluate(counters, &robots[robot_id]);
+                    let l = l.eval(counters, &robots[robot_id]);
                     advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
@@ -641,7 +642,7 @@ fn update_robot(
             Command::IfPlayerXY(ref x, ref y, ref l) => {
                 let pos = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
                 if board.player_pos == pos {
-                    let l = l.evaluate(counters, &robots[robot_id]);
+                    let l = l.eval(counters, &robots[robot_id]);
                     advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
@@ -738,8 +739,8 @@ fn update_robot(
             }
 
             Command::Goto(ref l) => {
-                let l = l.evaluate(counters, &robots[robot_id]);
-                advance = !jump_robot_to_label(&mut robots[robot_id], &l);
+                let l = l.eval(counters, &robots[robot_id]);
+                advance = !jump_robot_to_label(&mut robots[robot_id], l);
             }
 
             Command::Zap(ref l, ref n) => {
@@ -773,9 +774,10 @@ fn update_robot(
 
             Command::Send(ref r, ref l) => {
                 let r = r.evaluate(counters, &robots[robot_id]);
+                let l = l.eval(counters, &robots[robot_id]);
                 for (idx, robot) in robots.iter_mut().enumerate() {
                     if r.as_ref() == b"all" || robot.name == r {
-                        let did_send = send_robot_to_label(robot, l);
+                        let did_send = send_robot_to_label(robot, l.clone());
                         if idx == robot_id {
                             advance = !did_send;
                         }
@@ -789,9 +791,10 @@ fn update_robot(
                     if let Some(coord) = adjusted {
                         let thing = board.thing_at(&coord);
                         if thing == Thing::Robot || thing == Thing::RobotPushable {
-                            let (_, _, robot_id) = board.level_at(&coord);
+                            let (_, _, dest_robot_id) = board.level_at(&coord);
                             //FIXME: account for global robot
-                            send_robot_to_label(&mut robots[*robot_id as usize - 1], l.clone());
+                            let l = l.eval(counters, &robots[robot_id]);
+                            send_robot_to_label(&mut robots[*dest_robot_id as usize - 1], l);
                         }
                     }
                 }
@@ -801,9 +804,10 @@ fn update_robot(
                 let pos = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
                 let thing = board.thing_at(&pos);
                 if thing == Thing::Robot || thing == Thing::RobotPushable {
-                    let (_, _, robot_id) = board.level_at(&pos);
+                    let (_, _, dest_robot_id) = board.level_at(&pos);
+                    let l = l.eval(counters, &robots[robot_id]);
                     //FIXME: account for global robot
-                    send_robot_to_label(&mut robots[*robot_id as usize - 1], l.clone());
+                    send_robot_to_label(&mut robots[*dest_robot_id as usize - 1], l);
                 }
             }
 
@@ -853,7 +857,8 @@ fn update_robot(
                 let dir = dir_to_cardinal_dir(&robots[robot_id], d);
                 if let Some(dir) = dir {
                     if move_robot(&mut robots[robot_id], board, dir) == Move::Blocked {
-                        jump_robot_to_label(&mut robots[robot_id], l.clone());
+                        let l = l.eval(counters, &robots[robot_id]);
+                        jump_robot_to_label(&mut robots[robot_id], l);
                     }
                 }
             }
@@ -1163,6 +1168,12 @@ impl Into<ByteString> for BuiltInCounter {
     }
 }
 
+impl Into<EvaluatedByteString> for BuiltInCounter {
+    fn into(self) -> EvaluatedByteString {
+        EvaluatedByteString(self.into())
+    }
+}
+
 enum BuiltInLabel {
     Thud,
     Edge,
@@ -1171,31 +1182,51 @@ enum BuiltInLabel {
     Touch,
 }
 
-impl Into<ByteString> for BuiltInLabel {
-    fn into(self) -> ByteString {
-        ByteString::from(match self {
+impl Into<EvaluatedByteString> for BuiltInLabel {
+    fn into(self) -> EvaluatedByteString {
+        EvaluatedByteString(ByteString::from(match self {
             BuiltInLabel::Thud => "thud",
             BuiltInLabel::Edge => "edge",
             BuiltInLabel::Bombed => "bombed",
             BuiltInLabel::JustEntered => "justentered",
             BuiltInLabel::Touch => "touch",
-        })
+        }))
     }
 }
 
-fn send_robot_to_label<S: Into<ByteString>>(robot: &mut Robot, label: S) -> bool {
+#[derive(Clone)]
+struct EvaluatedByteString(ByteString);
+
+impl Deref for EvaluatedByteString {
+    type Target = ByteString;
+    fn deref(&self) -> &ByteString {
+        &self.0
+    }
+}
+
+trait Evaluator {
+    fn eval(&self, counters: &Counters, context: &Robot) -> EvaluatedByteString;
+}
+
+impl Evaluator for ByteString {
+    fn eval(&self, counters: &Counters, context: &Robot) -> EvaluatedByteString {
+        EvaluatedByteString(self.evaluate(counters, context))
+    }
+}
+
+fn send_robot_to_label<S: Into<EvaluatedByteString>>(robot: &mut Robot, label: S) -> bool {
     if robot.locked {
         return false;
     }
     jump_robot_to_label(robot, label)
 }
 
-fn jump_robot_to_label<S: Into<ByteString>>(robot: &mut Robot, label: S) -> bool {
+fn jump_robot_to_label<S: Into<EvaluatedByteString>>(robot: &mut Robot, label: S) -> bool {
     let label = label.into();
     let label_pos = robot
         .program
         .iter()
-        .position(|c| c == &Command::Label(label.clone()));
+        .position(|c| c == &Command::Label(label.deref().clone()));
     if let Some(pos) = label_pos {
         robot.current_line = pos as u16 + 1;
         true
