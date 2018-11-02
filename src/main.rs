@@ -30,9 +30,6 @@ use std::path::Path;
 use std::process::exit;
 use std::time::Duration;
 
-//TODO: deal with sending a robot to a label while in the middle of a multi-cycle command
-//TODO: deal with a robot being deleted by copy block/put/etc. operation
-
 struct SdlRenderer<'a> {
     canvas: &'a mut Canvas<Window>,
 }
@@ -304,6 +301,15 @@ fn update_robot(
 
     const CYCLES: u8 = 40;
     loop {
+        // FIXME: handle global robot
+        if !board.thing_at(&robots[robot_id].position).is_robot() {
+            info!("current robot not present at reported position; terminating");
+            robots[robot_id].alive = false;
+        } else if board.level_at(&robots[robot_id].position).2 - 1 != robot_id as u8 {
+            info!("current robot does not match robot ID at reported position; terminating");
+            robots[robot_id].alive = false;
+        }
+
         if lines_run >= CYCLES ||
             !robots[robot_id].alive ||
             robots[robot_id].current_line as usize >= robots[robot_id].program.len()
@@ -1199,7 +1205,7 @@ impl Into<EvaluatedByteString> for BuiltInLabel {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct EvaluatedByteString(ByteString);
 
 impl Deref for EvaluatedByteString {
@@ -1233,6 +1239,8 @@ fn jump_robot_to_label<S: Into<EvaluatedByteString>>(robot: &mut Robot, label: S
         .iter()
         .position(|c| c == &Command::Label(label.deref().clone()));
     if let Some(pos) = label_pos {
+        debug!("jumping {:?} to {:?}", robot.name, label);
+        robot.current_loc = 0;
         robot.current_line = pos as u16 + 1;
         true
     } else {
