@@ -11,7 +11,7 @@ use libmzx::{
     WorldState, Counters, Resolve, Operator, ExtendedColorValue, ExtendedParam,
     ColorValue, ParamValue, CharId, ByteString, Explosion, ExplosionResult, RelativePart,
     SignedNumeric, Color as MzxColor, RunStatus, Size, dir_to_cardinal_dir,
-    adjust_coordinate, KeyPress,
+    adjust_coordinate, KeyPress, CounterContext, CounterContextMut,
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use sdl2::event::Event;
@@ -229,12 +229,12 @@ enum Relative {
 }
 
 impl Relative {
-    fn resolve_xy(
+    fn resolve_xy<'a>(
         &self,
         x_value: &SignedNumeric,
         y_value: &SignedNumeric,
         counters: &Counters,
-        context: &Robot,
+        context: CounterContext<'a>,
         part: RelativePart,
     ) -> Coordinate<u16> {
         let x = self.resolve(x_value, counters, context, part, CoordinatePart::X);
@@ -242,11 +242,11 @@ impl Relative {
         Coordinate(x.max(0) as u16, y.max(0) as u16)
     }
 
-    fn resolve(
+    fn resolve<'a>(
         &self,
         value: &SignedNumeric,
         counters: &Counters,
-        context: &Robot,
+        context: CounterContext<'a>,
         part: RelativePart,
         coord_part: CoordinatePart,
     ) -> i16 {
@@ -340,14 +340,18 @@ fn update_robot(
                 if robots[robot_id].current_loc > 0 {
                     robots[robot_id].current_loc -= 1;
                 } else {
-                    robots[robot_id].current_loc = n.resolve(counters, &robots[robot_id]) as u8;
+                    robots[robot_id].current_loc = {
+                        let context = CounterContext::from(board, &robots[robot_id]);
+                        n.resolve(counters, context) as u8
+                    };
                 }
                 advance = robots[robot_id].current_loc == 0;
                 no_end_cycle = advance;
             }
 
             Command::PlayerChar(ref c) => {
-                let c = c.resolve(counters, &robots[robot_id]);
+                let context = CounterContext::from(board, &robots[robot_id]);
+                let c = c.resolve(counters, context);
                 state.set_char_id(CharId::PlayerNorth, c);
                 state.set_char_id(CharId::PlayerSouth, c);
                 state.set_char_id(CharId::PlayerEast, c);
@@ -355,7 +359,8 @@ fn update_robot(
             }
 
             Command::PlayerCharDir(ref d, ref c) => {
-                let c = c.resolve(counters, &robots[robot_id]);
+                let context = CounterContext::from(board, &robots[robot_id]);
+                let c = c.resolve(counters, context);
                 match dir_to_cardinal_dir(&robots[robot_id], d) {
                     Some(CardinalDirection::North) => state.set_char_id(CharId::PlayerNorth, c),
                     Some(CardinalDirection::South) => state.set_char_id(CharId::PlayerSouth, c),
@@ -366,18 +371,21 @@ fn update_robot(
             }
 
             Command::PlayerColor(ref c) => {
-                let c = c.resolve(counters, &robots[robot_id]);
+                let context = CounterContext::from(board, &robots[robot_id]);
+                let c = c.resolve(counters, context);
                 state.set_char_id(CharId::PlayerColor, c.0);
             }
 
             Command::CharEdit(ref c, ref bytes) => {
-                let c = c.resolve(counters, &robots[robot_id]);
-                let bytes: Vec<u8> = bytes.iter().map(|b| b.resolve(counters, &robots[robot_id])).collect();
+                let context = CounterContext::from(board, &robots[robot_id]);
+                let c = c.resolve(counters, context);
+                let bytes: Vec<u8> = bytes.iter().map(|b| b.resolve(counters, context)).collect();
                 state.charset.nth_mut(c).copy_from_slice(&bytes);
             }
 
             Command::ScrollChar(ref c, ref dir) => {
-                let c = c.resolve(counters, &robots[robot_id]);
+                let context = CounterContext::from(board, &robots[robot_id]);
+                let c = c.resolve(counters, context);
                 let (x, y) = match dir_to_cardinal_dir(&robots[robot_id], dir) {
                     Some(CardinalDirection::North) => (0, -1),
                     Some(CardinalDirection::South) => (0, 1),
@@ -415,8 +423,9 @@ fn update_robot(
             }
 
             Command::CopyChar(ref c1, ref c2) => {
-                let c1 = c1.resolve(counters, &robots[robot_id]);
-                let c2 = c2.resolve(counters, &robots[robot_id]);
+                let context = CounterContext::from(board, &robots[robot_id]);
+                let c1 = c1.resolve(counters, context);
+                let c2 = c2.resolve(counters, context);
                 let bytes: Vec<u8> = state.charset.nth(c1).to_owned();
                 state.charset.nth_mut(c2).copy_from_slice(&bytes);
             }
@@ -436,10 +445,11 @@ fn update_robot(
             }
 
             Command::SetColor(ref c, ref r, ref g, ref b) => {
-                let c = c.resolve(counters, &robots[robot_id]);
-                let r = r.resolve(counters, &robots[robot_id]) as u8;
-                let g = g.resolve(counters, &robots[robot_id]) as u8;
-                let b = b.resolve(counters, &robots[robot_id]) as u8;
+                let context = CounterContext::from(board, &robots[robot_id]);
+                let c = c.resolve(counters, context);
+                let r = r.resolve(counters, context) as u8;
+                let g = g.resolve(counters, context) as u8;
+                let b = b.resolve(counters, context) as u8;
                 if r > 63 || g > 63 || b > 63 {
                     warn!("bad colors: {},{},{}", r, g, b);
                 }
@@ -447,11 +457,12 @@ fn update_robot(
             }
 
             Command::ColorIntensity(ref c, ref n) => {
-                let n = n.resolve(counters, &robots[robot_id]);
+                let context = CounterContext::from(board, &robots[robot_id]);
+                let n = n.resolve(counters, context);
                 let intensity = (n as f32 / 100.).min(1.0);
                 match *c {
                     Some(ref c) => {
-                        let c = c.resolve(counters, &robots[robot_id]);
+                        let c = c.resolve(counters, context);
                         if (c as usize) < state.palette.colors.len() {
                             state.palette.colors[c as usize].1 = intensity;
                         }
@@ -483,15 +494,21 @@ fn update_robot(
             }
 
             Command::ViewportSize(ref w, ref h) => {
-                let w = w.resolve(counters, &robots[robot_id]) as u8;
-                let h = h.resolve(counters, &robots[robot_id]) as u8;
-                board.viewport_size = Size(w, h);
+                board.viewport_size = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    let w = w.resolve(counters, context) as u8;
+                    let h = h.resolve(counters, context) as u8;
+                    Size(w, h)
+                };
             }
 
             Command::Viewport(ref x, ref y) => {
-                let x = x.resolve(counters, &robots[robot_id]) as u8;
-                let y = y.resolve(counters, &robots[robot_id]) as u8;
-                board.upper_left_viewport = Coordinate(x, y);
+                board.upper_left_viewport = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    let x = x.resolve(counters, context) as u8;
+                    let y = y.resolve(counters, context) as u8;
+                    Coordinate(x, y)
+                };
             }
 
             Command::ResetView => {
@@ -507,13 +524,19 @@ fn update_robot(
             }
 
             Command::ScrollViewXY(ref x, ref y) => {
-                let x = x.resolve(counters, &robots[robot_id]);
-                let y = y.resolve(counters, &robots[robot_id]);
-                board.scroll_offset = Coordinate(x as u16, y as u16);
+                board.scroll_offset = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    let x = x.resolve(counters, context);
+                    let y = y.resolve(counters, context);
+                    Coordinate(x as u16, y as u16)
+                };
             }
 
             Command::ScrollView(ref dir, ref n) => {
-                let n = n.resolve(counters, &robots[robot_id]);
+                let n = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    n.resolve(counters, context)
+                };
                 let dir = dir_to_cardinal_dir(&robots[robot_id], dir);
                 match dir {
                     Some(CardinalDirection::West) => if (board.scroll_offset.0 as u32) < n {
@@ -559,58 +582,104 @@ fn update_robot(
             }
 
             Command::Set(ref s, ref n, ref n2) => {
-                let mut val = n.resolve(counters, &robots[robot_id]) as i32;
-                if let Some(ref n2) = *n2 {
-                    let upper = n2.resolve(counters, &robots[robot_id]) as i32;
-                    let range = (upper - val).abs() as u32;
-                    val = (rand::random::<u32>() % range) as i32 + val;
-                }
-                counters.set(s.clone(), &mut robots[robot_id], val);
+                let val = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    let val = n.resolve(counters, context) as i32;
+                    if let Some(ref n2) = *n2 {
+                        let upper = n2.resolve(counters, context) as i32;
+                        let range = (upper - val).abs() as u32;
+                        (rand::random::<u32>() % range) as i32 + val
+                    } else {
+                        val
+                    }
+                };
+                let context = CounterContextMut::from(board, &mut robots[robot_id]);
+                counters.set(s.clone(), context, val);
             }
 
             Command::Dec(ref s, ref n, ref n2) => {
-                let mut val = n.resolve(counters, &robots[robot_id]) as i32;
-                let initial = counters.get(s, &robots[robot_id]);
-                if let Some(ref n2) = *n2 {
-                    let upper = n2.resolve(counters, &robots[robot_id]) as i32;
-                    let range = (upper - val).abs() as u32;
-                    val = (rand::random::<u32>() % range) as i32 + val;
-                }
-                counters.set(s.clone(), &mut robots[robot_id], initial.wrapping_sub(val));
+                let (initial, val) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    let val = n.resolve(counters, context) as i32;
+                    (
+                        counters.get(s, context),
+                        if let Some(ref n2) = *n2 {
+                            let upper = n2.resolve(counters, context) as i32;
+                            let range = (upper - val).abs() as u32;
+                            (rand::random::<u32>() % range) as i32 + val
+                        } else {
+                            val
+                        }
+                    )
+                };
+                let context = CounterContextMut::from(board, &mut robots[robot_id]);
+                counters.set(s.clone(), context, initial.wrapping_sub(val));
             }
 
             Command::Inc(ref s, ref n, ref n2) => {
-                let mut val = n.resolve(counters, &robots[robot_id]) as i32;
-                let initial = counters.get(s, &robots[robot_id]);
-                if let Some(ref n2) = *n2 {
-                    let upper = n2.resolve(counters, &robots[robot_id]) as i32;
-                    let range = (upper - val).abs() as u32;
-                    val = (rand::random::<u32>() % range) as i32 + val;
-                }
-                counters.set(s.clone(), &mut robots[robot_id], initial.wrapping_add(val));
+                let (initial, val) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    let val = n.resolve(counters, context) as i32;
+                    (
+                        counters.get(s, context),
+                        if let Some(ref n2) = *n2 {
+                            let upper = n2.resolve(counters, context) as i32;
+                            let range = (upper - val).abs() as u32;
+                            (rand::random::<u32>() % range) as i32 + val
+                        } else {
+                            val
+                        }
+                    )
+                };
+                let context = CounterContextMut::from(board, &mut robots[robot_id]);
+                counters.set(s.clone(), context, initial.wrapping_add(val));
             }
 
             Command::Multiply(ref s, ref n) => {
-                let mut val = n.resolve(counters, &robots[robot_id]) as i32;
-                let initial = counters.get(s, &robots[robot_id]);
-                counters.set(s.clone(), &mut robots[robot_id], initial.wrapping_mul(val));
+                let (initial, val) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    (
+                        counters.get(s, context),
+                        n.resolve(counters, context) as i32,
+                    )
+                };
+                let context = CounterContextMut::from(board, &mut robots[robot_id]);
+                counters.set(s.clone(), context, initial.wrapping_mul(val));
             }
 
             Command::Divide(ref s, ref n) => {
-                let mut val = n.resolve(counters, &robots[robot_id]) as i32;
-                let initial = counters.get(s, &robots[robot_id]);
-                counters.set(s.clone(), &mut robots[robot_id], initial / val);
+                let (initial, val) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    (
+                        counters.get(s, context),
+                        n.resolve(counters, context) as i32,
+                    )
+                };
+                let context = CounterContextMut::from(board, &mut robots[robot_id]);
+                counters.set(s.clone(), context, initial / val);
             }
 
             Command::Modulo(ref s, ref n) => {
-                let mut val = n.resolve(counters, &robots[robot_id]) as i32;
-                let initial = counters.get(s, &robots[robot_id]);
-                counters.set(s.clone(), &mut robots[robot_id], initial % val);
+                let (initial, val) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    (
+                        counters.get(s, context),
+                        n.resolve(counters, context) as i32,
+                    )
+                };
+                let context = CounterContextMut::from(board, &mut robots[robot_id]);
+                counters.set(s.clone(), context, initial % val);
             }
 
             Command::If(ref s, op, ref n, ref l) => {
-                let val = counters.get(s, &robots[robot_id]);
-                let cmp = n.resolve(counters, &robots[robot_id]) as i32;
+                let (val, cmp, l) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    (
+                        counters.get(s, context),
+                        n.resolve(counters, context) as i32,
+                        l.eval(counters, context),
+                    )
+                };
                 let result = match op {
                     Operator::Equals => val == cmp,
                     Operator::NotEquals => val != cmp,
@@ -620,7 +689,6 @@ fn update_robot(
                     Operator::GreaterThanEquals => val >= cmp,
                 };
                 if result {
-                    let l = l.eval(counters, &robots[robot_id]);
                     advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
@@ -631,38 +699,56 @@ fn update_robot(
                     result = !result;
                 }
                 if result {
-                    let l = l.eval(counters, &robots[robot_id]);
+                    let l = {
+                        let context = CounterContext::from(board, &robots[robot_id]);
+                        l.eval(counters, context)
+                    };
                     advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
 
             Command::IfThingXY(ref color, ref thing, ref param, ref x, ref y, ref l) => {
-                let color = color.resolve(counters, &robots[robot_id]);
-                let param = param.resolve(counters, &robots[robot_id]);
-                let pos = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
+                let (color, param, pos, l) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    (
+                        color.resolve(counters, context),
+                        param.resolve(counters, context),
+                        mode.resolve_xy(x, y, counters, context, RelativePart::First),
+                        l.eval(counters, context),
+                    )
+                };
                 let &(board_thing, board_color, board_param) = board.level_at(&pos);
                 if board_thing == thing.to_u8().unwrap() &&
                     color.matches(ColorValue(board_color)) &&
                     param.matches(ParamValue(board_param))
                 {
-                    let l = l.eval(counters, &robots[robot_id]);
                     advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
 
             Command::IfPlayerXY(ref x, ref y, ref l) => {
-                let pos = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
+                let (pos, l) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    (
+                        mode.resolve_xy(x, y, counters, context, RelativePart::First),
+                        l.eval(counters, context),
+                    )
+                };
                 if board.player_pos == pos {
-                    let l = l.eval(counters, &robots[robot_id]);
                     advance = !jump_robot_to_label(&mut robots[robot_id], l);
                 }
             }
 
             Command::Change(ref c1, ref t1, ref p1, ref c2, ref t2, ref p2) => {
-                let c1 = c1.resolve(counters, &robots[robot_id]);
-                let c2 = c2.resolve(counters, &robots[robot_id]);
-                let p1 = p1.resolve(counters, &robots[robot_id]);
-                let p2 = p2.resolve(counters, &robots[robot_id]);
+                let (c1, c2, p1, p2) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    (
+                        c1.resolve(counters, context),
+                        c2.resolve(counters, context),
+                        p1.resolve(counters, context),
+                        p2.resolve(counters, context),
+                    )
+                };
                 for &mut (ref mut id, ref mut color, ref mut param) in &mut board.level {
                     if c1.matches(ColorValue(*color)) &&
                         p1.matches(ParamValue(*param)) &&
@@ -689,12 +775,17 @@ fn update_robot(
             }
 
             Command::ChangeOverlay(ref c1, ref c2, ref chars) => {
-                let c1 = c1.resolve(counters, &robots[robot_id]);
-                let c2 = c2.resolve(counters, &robots[robot_id]);
-                let chars = chars.as_ref().map(|(ch1, ch2)| (
-                    ch1.resolve(counters, &robots[robot_id]),
-                    ch2.resolve(counters, &robots[robot_id]),
-                ));
+                let (c1, c2, chars) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    (
+                        c1.resolve(counters, context),
+                        c2.resolve(counters, context),
+                        chars.as_ref().map(|(ch1, ch2)| (
+                            ch1.resolve(counters, context),
+                            ch2.resolve(counters, context),
+                        )),
+                    )
+                };
                 if let Some((_, ref mut overlay)) = board.overlay {
                     for &mut (ref mut ch, ref mut color) in overlay.iter_mut() {
                         if c1.matches(ColorValue(*color)) &&
@@ -720,9 +811,14 @@ fn update_robot(
             }
 
             Command::PutOverlay(ref c, ref ch, ref x, ref y) => {
-                let c = c.resolve(counters, &robots[robot_id]);
-                let ch = ch.resolve(counters, &robots[robot_id]);
-                let pos = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
+                let (c, ch, pos) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    (
+                        c.resolve(counters, context),
+                        ch.resolve(counters, context),
+                        mode.resolve_xy(x, y, counters, context, RelativePart::First),
+                    )
+                };
                 if let Some((_, ref mut overlay)) = board.overlay {
                     let overlay = &mut overlay[pos.1 as usize * board.width + pos.0 as usize];
                     let color = match c {
@@ -742,20 +838,32 @@ fn update_robot(
             }
 
             Command::Color(ref c) => {
-                board.level_at_mut(&robots[robot_id].position).1 = c.resolve(counters, &robots[robot_id]).0;
+                board.level_at_mut(&robots[robot_id].position).1 = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    c.resolve(counters, context).0
+                };
             }
 
             Command::Char(ref c) => {
-                robots[robot_id].ch = c.resolve(counters, &robots[robot_id]);
+                robots[robot_id].ch = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    c.resolve(counters, context)
+                };
             }
 
             Command::Goto(ref l) => {
-                let l = l.eval(counters, &robots[robot_id]);
+                let l = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    l.eval(counters, context)
+                };
                 advance = !jump_robot_to_label(&mut robots[robot_id], l);
             }
 
             Command::Zap(ref l, ref n) => {
-                let n = n.resolve(counters, &robots[robot_id]);
+                let n = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    n.resolve(counters, context)
+                };
                 for _ in 0..n {
                     let label = robots[robot_id]
                         .program
@@ -768,7 +876,10 @@ fn update_robot(
             }
 
             Command::Restore(ref l, ref n) => {
-                let n = n.resolve(counters, &robots[robot_id]);
+                let n = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    n.resolve(counters, context)
+                };
                 for _ in 0..n {
                     let label = robots[robot_id]
                         .program
@@ -784,8 +895,13 @@ fn update_robot(
             }
 
             Command::Send(ref r, ref l) => {
-                let r = r.evaluate(counters, &robots[robot_id]);
-                let l = l.eval(counters, &robots[robot_id]);
+                let (r, l) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    (
+                        r.evaluate(counters, context),
+                        l.eval(counters, context)
+                    )
+                };
                 for (idx, robot) in robots.iter_mut().enumerate() {
                     if r.as_ref() == b"all" || robot.name == r {
                         let did_send = send_robot_to_label(robot, l.clone());
@@ -804,7 +920,10 @@ fn update_robot(
                         if thing == Thing::Robot || thing == Thing::RobotPushable {
                             let (_, _, dest_robot_id) = board.level_at(&coord);
                             //FIXME: account for global robot
-                            let l = l.eval(counters, &robots[robot_id]);
+                            let l = {
+                                let context = CounterContext::from(board, &robots[robot_id]);
+                                l.eval(counters, context)
+                            };
                             send_robot_to_label(&mut robots[*dest_robot_id as usize - 1], l);
                         }
                     }
@@ -812,11 +931,16 @@ fn update_robot(
             }
 
             Command::SendXY(ref x, ref y, ref l) => {
-                let pos = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
+                let (pos, l) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    (
+                        mode.resolve_xy(x, y, counters, context, RelativePart::First),
+                        l.eval(counters, context)
+                    )
+                };
                 let thing = board.thing_at(&pos);
                 if thing == Thing::Robot || thing == Thing::RobotPushable {
                     let (_, _, dest_robot_id) = board.level_at(&pos);
-                    let l = l.eval(counters, &robots[robot_id]);
                     //FIXME: account for global robot
                     send_robot_to_label(&mut robots[*dest_robot_id as usize - 1], l);
                 }
@@ -850,7 +974,10 @@ fn update_robot(
                 if robots[robot_id].current_loc > 0 {
                     robots[robot_id].current_loc -= 1;
                 } else {
-                    robots[robot_id].current_loc = n.resolve(counters, &robots[robot_id]) as u8;
+                    robots[robot_id].current_loc = {
+                        let context = CounterContext::from(board, &robots[robot_id]);
+                        n.resolve(counters, context) as u8
+                    };
                 }
                 if robots[robot_id].current_loc != 0 {
                     let dir = dir_to_cardinal_dir(&robots[robot_id], d);
@@ -868,20 +995,28 @@ fn update_robot(
                 let dir = dir_to_cardinal_dir(&robots[robot_id], d);
                 if let Some(dir) = dir {
                     if move_robot(&mut robots[robot_id], board, dir) == Move::Blocked {
-                        let l = l.eval(counters, &robots[robot_id]);
+                        let l = {
+                            let context = CounterContext::from(board, &robots[robot_id]);
+                            l.eval(counters, context)
+                        };
                         jump_robot_to_label(&mut robots[robot_id], l);
                     }
                 }
             }
 
             Command::Cycle(ref n) => {
-                let n = (n.resolve(counters, &robots[robot_id]) % 256) as u8;
-                robots[robot_id].cycle = n;
+                robots[robot_id].cycle = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    (n.resolve(counters, context) % 256) as u8
+                };
             }
 
             Command::Explode(ref n) => {
                 robots[robot_id].alive = false;
-                let n = n.resolve(counters, &robots[robot_id]) as u8;
+                let n = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    n.resolve(counters, context) as u8
+                };
                 let &mut (ref mut id, ref mut c, ref mut param) =
                     board.level_at_mut(&robots[robot_id].position);
                 *id = Thing::Explosion.to_u8().unwrap();
@@ -894,7 +1029,10 @@ fn update_robot(
             },
 
             Command::GotoXY(ref x, ref y) => {
-                let coord = mode.resolve_xy(x, y, counters, &robots[robot_id], RelativePart::First);
+                let coord = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    mode.resolve_xy(x, y, counters, context, RelativePart::First)
+                };
                 move_robot_to(&mut robots[robot_id], board, coord);
             }
 
@@ -912,9 +1050,10 @@ fn update_robot(
 
             Command::RelCounters(ref part) => {
                 //FIXME: casting is probably the wrong solution here
+                let context = CounterContext::from(board, &robots[robot_id]);
                 let coord = Coordinate(
-                    counters.get(&BuiltInCounter::Xpos.into(), &robots[robot_id]) as u16,
-                    counters.get(&BuiltInCounter::Ypos.into(), &robots[robot_id]) as u16,
+                    counters.get(&BuiltInCounter::Xpos.into(), context) as u16,
+                    counters.get(&BuiltInCounter::Ypos.into(), context) as u16,
                 );
                 mode = Relative::Coordinate(*part, coord);
                 reset_mode = false;
@@ -922,20 +1061,23 @@ fn update_robot(
             }
 
             Command::Teleport(ref b, ref x, ref y) => {
+                let context = CounterContext::from(board, &robots[robot_id]);
                 let coord = Coordinate(
-                    x.resolve(counters, &robots[robot_id]) as u16,
-                    y.resolve(counters, &robots[robot_id]) as u16,
+                    x.resolve(counters, context) as u16,
+                    y.resolve(counters, context) as u16,
                 );
                 state_change = Some(StateChange::Teleport(b.clone(), coord));
             }
 
             Command::SavePlayerPosition(ref n) => {
-                let n = n.resolve(counters, &robots[robot_id]) as usize;
+                let context = CounterContext::from(board, &robots[robot_id]);
+                let n = n.resolve(counters, context) as usize;
                 state.saved_positions[n] = (board_id, board.player_pos);
             }
 
             Command::RestorePlayerPosition(ref n) => {
-                let n = n.resolve(counters, &robots[robot_id]) as usize;
+                let context = CounterContext::from(board, &robots[robot_id]);
+                let n = n.resolve(counters, context) as usize;
                 let (board_id, pos) = state.saved_positions[n];
                 state_change = Some(StateChange::Restore(board_id, pos));
             }
@@ -945,7 +1087,10 @@ fn update_robot(
             }
 
             Command::LoopFor(ref n) => {
-                let n = n.resolve(counters, &robots[robot_id]);
+                let n = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    n.resolve(counters, context)
+                };
                 if (robots[robot_id].loop_count as u32) < n {
                     let start = robots[robot_id]
                         .program[0..robots[robot_id].current_line as usize]
@@ -967,40 +1112,44 @@ fn update_robot(
             Command::CopyBlock(ref src_x, ref src_y, ref w, ref h, ref dst_x, ref dst_y) |
             Command::CopyOverlayBlock(ref src_x, ref src_y, ref w, ref h, ref dst_x, ref dst_y) => {
                 let overlay = if let Command::CopyOverlayBlock(..) = cmd { true } else { false };
-                let mut src = mode.resolve_xy(
-                    src_x,
-                    src_y,
-                    counters,
-                    &robots[robot_id],
-                    RelativePart::First
-                );
-                if src.0 as usize > board.width {
-                    src.0 = (board.width - 1) as u16;
-                }
-                if src.1 as usize > board.height {
-                    src.1 = (board.height - 1) as u16;
-                }
+                let (src, w, h, dest) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    let mut src = mode.resolve_xy(
+                        src_x,
+                        src_y,
+                        counters,
+                        context,
+                        RelativePart::First
+                    );
+                    if src.0 as usize > board.width {
+                        src.0 = (board.width - 1) as u16;
+                    }
+                    if src.1 as usize > board.height {
+                        src.1 = (board.height - 1) as u16;
+                    }
 
-                let mut w = w.resolve(counters, &robots[robot_id])
-                    .max(1)
-                    .min(board.width as u32 - src.0 as u32) as u16;
-                let mut h = h.resolve(counters, &robots[robot_id]).max(1)
-                    .max(1)
-                    .min(board.height as u32 - src.1 as u32) as u16;
+                    let mut w = w.resolve(counters, context)
+                        .max(1)
+                        .min(board.width as u32 - src.0 as u32) as u16;
+                    let mut h = h.resolve(counters, context).max(1)
+                        .max(1)
+                        .min(board.height as u32 - src.1 as u32) as u16;
 
-                let dest = mode.resolve_xy(
-                    dst_x,
-                    dst_y,
-                    counters,
-                    &robots[robot_id],
-                    RelativePart::Last
-                );
-                if dest.0 + w > board.width as u16 {
-                    w = (board.width as i16 - dest.0 as i16).max(0) as u16;
-                }
-                if dest.1 + h > board.height as u16 {
-                    h = (board.height as i16 - dest.1 as i16).max(0) as u16;
-                }
+                    let dest = mode.resolve_xy(
+                        dst_x,
+                        dst_y,
+                        counters,
+                        context,
+                        RelativePart::Last
+                    );
+                    if dest.0 + w > board.width as u16 {
+                        w = (board.width as i16 - dest.0 as i16).max(0) as u16;
+                    }
+                    if dest.1 + h > board.height as u16 {
+                        h = (board.height as i16 - dest.1 as i16).max(0) as u16;
+                    }
+                    (src, w, h, dest)
+                };
 
                 if overlay {
                     board.copy_overlay(src, Size(w, h), dest);
@@ -1010,35 +1159,46 @@ fn update_robot(
             }
 
             Command::WriteOverlay(ref c, ref s, ref x, ref y) => {
-                let pos = mode.resolve_xy(
-                    x,
-                    y,
-                    counters,
-                    &robots[robot_id],
-                    RelativePart::First,
-                );
-                let c = c.resolve(counters, &robots[robot_id]);
-                let s = s.evaluate(counters, &robots[robot_id]);
+                let (pos, c, s) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    let pos = mode.resolve_xy(
+                        x,
+                        y,
+                        counters,
+                        context,
+                        RelativePart::First,
+                    );
+                    let c = c.resolve(counters, context);
+                    let s = s.evaluate(counters, context);
+                    (pos, c, s)
+                };
                 board.write_overlay(&pos, &s, c.0);
             }
 
             Command::PutXY(ref color, ref thing, ref param, ref x, ref y) => {
-                let color = color.resolve(counters, &robots[robot_id]);
-                let param = param.resolve(counters, &robots[robot_id]);
-                let pos = mode.resolve_xy(
-                    x,
-                    y,
-                    counters,
-                    &robots[robot_id],
-                    RelativePart::First,
-                );
-
+                let (color, param, pos) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    let color = color.resolve(counters, context);
+                    let param = param.resolve(counters, context);
+                    let pos = mode.resolve_xy(
+                        x,
+                        y,
+                        counters,
+                        context,
+                        RelativePart::First,
+                    );
+                    (color, param, pos)
+                };
                 put_thing(board, color, *thing, param, pos);
             }
 
             Command::PutDir(ref color, ref thing, ref param, ref dir) => {
-                let color = color.resolve(counters, &robots[robot_id]);
-                let param = param.resolve(counters, &robots[robot_id]);
+                let (color, param) = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    let color = color.resolve(counters, context);
+                    let param = param.resolve(counters, context);
+                    (color, param)
+                };
                 let dir = dir_to_cardinal_dir(&robots[robot_id], dir);
                 if let Some(dir) = dir {
                     let adjusted = adjust_coordinate(robots[robot_id].position, board, dir);
@@ -1049,13 +1209,16 @@ fn update_robot(
             }
 
             Command::CopyRobotXY(ref x, ref y) => {
-                let pos = mode.resolve_xy(
-                    x,
-                    y,
-                    counters,
-                    &robots[robot_id],
-                    RelativePart::First,
-                );
+                let pos = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    mode.resolve_xy(
+                        x,
+                        y,
+                        counters,
+                        context,
+                        RelativePart::First,
+                    )
+                };
 
                 let &(thing, _color, param) = board.level_at(&pos);
                 if Thing::from_u8(thing).unwrap().is_robot() {
@@ -1089,17 +1252,26 @@ fn update_robot(
             }
 
             Command::MessageColumn(ref n) => {
-                let n = n.resolve(counters, &robots[robot_id]);
-                board.message_col = Some(n as u8);
+                board.message_col = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    let n = n.resolve(counters, context);
+                    Some(n as u8)
+                };
             }
 
             Command::MessageRow(ref n) => {
-                let n = n.resolve(counters, &robots[robot_id]);
-                board.message_row = n as u8;
+                board.message_row = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    let n = n.resolve(counters, context);
+                    n as u8
+                }
             }
 
             Command::MessageLine(ref s) => {
-                board.message_line = s.evaluate(counters, &robots[robot_id]);
+                board.message_line = {
+                    let context = CounterContext::from(board, &robots[robot_id]);
+                    s.evaluate(counters, context)
+                };
                 board.remaining_message_cycles = 80;
             }
 
@@ -1216,11 +1388,11 @@ impl Deref for EvaluatedByteString {
 }
 
 trait Evaluator {
-    fn eval(&self, counters: &Counters, context: &Robot) -> EvaluatedByteString;
+    fn eval<'a>(&self, counters: &Counters, context: CounterContext<'a>) -> EvaluatedByteString;
 }
 
 impl Evaluator for ByteString {
-    fn eval(&self, counters: &Counters, context: &Robot) -> EvaluatedByteString {
+    fn eval<'a>(&self, counters: &Counters, context: CounterContext<'a>) -> EvaluatedByteString {
         EvaluatedByteString(self.evaluate(counters, context))
     }
 }
