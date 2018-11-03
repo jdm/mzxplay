@@ -97,24 +97,28 @@ fn handle_key_input(
         Some(k) => k,
         None => return None,
     };
-    if is_title_screen {
-        if down && keycode == Keycode::P {
-            return Some(GameStateChange::BeginGame);
-        }
-        return None;
-    }
     match keycode {
-        Keycode::Up => input_state.up_pressed = down,
-        Keycode::Down => input_state.down_pressed = down,
-        Keycode::Left => input_state.left_pressed = down,
-        Keycode::Right => input_state.right_pressed = down,
-        Keycode::Space => input_state.space_pressed = down,
-        Keycode::Delete => input_state.delete_pressed = down,
         Keycode::Num1 => return Some(GameStateChange::Speed(1)),
         Keycode::Num2 => return Some(GameStateChange::Speed(2)),
         Keycode::Num3 => return Some(GameStateChange::Speed(3)),
         Keycode::Num4 => return Some(GameStateChange::Speed(4)),
         _ => (),
+    }
+    if is_title_screen {
+        if down && keycode == Keycode::P {
+            return Some(GameStateChange::BeginGame);
+        }
+        return None;
+    } else {
+        match keycode {
+            Keycode::Up => input_state.up_pressed = down,
+            Keycode::Down => input_state.down_pressed = down,
+            Keycode::Left => input_state.left_pressed = down,
+            Keycode::Right => input_state.right_pressed = down,
+            Keycode::Space => input_state.space_pressed = down,
+            Keycode::Delete => input_state.delete_pressed = down,
+            _ => (),
+        }
     }
     None
 }
