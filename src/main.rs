@@ -153,16 +153,18 @@ fn convert_input(input_state: &InputState) -> Option<KeyPress> {
 fn process_input(
     board: &mut Board,
     input_state: &InputState,
-    world_state: &WorldState,
+    world_state: &mut WorldState,
 ) -> Option<InputResult> {
     let player_pos = board.player_pos;
     let xdiff  = if !world_state.player_locked_ew && input_state.left_pressed {
+        world_state.player_face_dir = CardinalDirection::West;
         if player_pos.0 > 0 {
             -1i8
         } else {
             return Some(InputResult::ExitBoard(CardinalDirection::West));
         }
     } else if !world_state.player_locked_ew && input_state.right_pressed {
+        world_state.player_face_dir = CardinalDirection::East;
         if (player_pos.0 as usize) < board.width - 1 {
             1i8
         } else {
@@ -173,12 +175,14 @@ fn process_input(
     };
 
     let ydiff  = if !world_state.player_locked_ns && xdiff == 0 && input_state.up_pressed {
+        world_state.player_face_dir = CardinalDirection::North;
         if (player_pos.1 as usize) > 0 {
             -1
         } else {
             return Some(InputResult::ExitBoard(CardinalDirection::North));
         }
     } else if !world_state.player_locked_ns && xdiff == 0 && input_state.down_pressed {
+        world_state.player_face_dir = CardinalDirection::South;
         if (player_pos.1 as usize) < board.height - 1 {
             1
         } else {
@@ -1761,7 +1765,7 @@ fn run(world_path: &Path) {
         }
 
         let key = convert_input(&input_state);
-        let result = process_input(&mut world.boards[board_id], &input_state, &world.state);
+        let result = process_input(&mut world.boards[board_id], &input_state, &mut world.state);
         match result {
             Some(InputResult::ExitBoard(dir)) => {
                 let id = {
