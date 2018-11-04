@@ -1820,7 +1820,7 @@ fn run(world_path: &Path) {
                 let dest_board = &mut world.boards[dest_board_id as usize];
                 let coord = dest_board.find(id, color).unwrap_or(dest_board.player_pos);
                 board_id = dest_board_id as usize;
-                enter_board(dest_board, coord, &mut world.board_robots[dest_board_id as usize]);
+                enter_board(dest_board, coord, &mut world.board_robots[board_id]);
             }
             Some(InputResult::Collide(pos)) => {
                 let board = &world.boards[board_id];
