@@ -1499,9 +1499,8 @@ fn update_board(
 
     for y in 0..board.height {
         for x in 0..board.width {
-            let level_idx = y * board.width + x;
-            let thing = Thing::from_u8(board.level[level_idx].0).unwrap();
-            match thing {
+            let coord = Coordinate(x as u16, y as u16);
+            match board.thing_at(&coord) {
                 Thing::Robot | Thing::RobotPushable => {
                     let change = update_robot(
                         state,
@@ -1511,7 +1510,7 @@ fn update_board(
                         board,
                         board_id,
                         &mut *robots,
-                        RobotId::from(board.level[level_idx].2)
+                        RobotId::from(board.level_at(&coord).2)
                     );
                     if change.is_some() {
                         return change;
@@ -1519,80 +1518,83 @@ fn update_board(
                 }
 
                 Thing::Explosion => {
-                    let mut explosion = Explosion::from_param(board.level[level_idx].2);
+                    let mut explosion = Explosion::from_param(board.level_at(&coord).2);
                     if explosion.stage == 0 {
                         if explosion.size > 0 {
                             explosion.size -= 1;
-                            board.level[level_idx].2 = explosion.to_param();
+                            board.level_at_mut(&coord).2 = explosion.to_param();
 
                             let dirs = [
-                                (0i16, -1),
-                                (0, 1),
-                                (1, 0),
-                                (-1, 0),
+                                CardinalDirection::North,
+                                CardinalDirection::South,
+                                CardinalDirection::East,
+                                CardinalDirection::West,
                             ];
-                            for &(xdiff, ydiff) in &dirs {
-                                if (y == 0 && ydiff < 0) ||
-                                    (x == 0 && xdiff < 0) ||
-                                    (y == board.height - 1 && ydiff > 0) ||
-                                    (x == board.width - 1  && xdiff > 0)
-                                {
-                                    continue;
-                                }
-                                let level_idx = (y as i16 + ydiff) as usize * board.width + (x as i16 + xdiff) as usize;
-                                let thing = Thing::from_u8(board.level[level_idx].0).unwrap();
+                            for dir in &dirs {
+                                let adjusted = adjust_coordinate(
+                                    coord,
+                                    board,
+                                    *dir,
+                                );
+                                let coord = match adjusted {
+                                    Some(coord) => coord,
+                                    None => continue,
+                                };
+                                let thing = board.thing_at(&coord);
                                 if !thing.is_solid() && thing != Thing::Explosion {
-                                    board.level[level_idx] = (
+                                    board.put_at(
+                                        &coord,
                                         Thing::Explosion.to_u8().unwrap(),
                                         0x00,
                                         explosion.to_param(),
                                     );
-                                } else if thing == Thing::Robot || thing == Thing::RobotPushable {
-                                    let robot_id = board.level[level_idx].2 - 1;
-                                    send_robot_to_label(&mut robots[robot_id as usize], BuiltInLabel::Bombed);
+                                } else if thing.is_robot() {
+                                    let robot_id = RobotId::from(board.level_at(&coord).2);
+                                    let robot = robot_id.as_mut_robot(&mut state.global_robot, robots);
+                                    send_robot_to_label(robot, BuiltInLabel::Bombed);
                                 }
+                                // TODO: hurt player.
                             }
                         }
                     }
 
                     if explosion.stage == 3 {
-                        board.level[level_idx] = match board.explosion_result {
+                        let (thing, color) = match board.explosion_result {
                             ExplosionResult::Nothing => (
                                 Thing::Space.to_u8().unwrap(),
                                 0x07,
-                                0x00
                             ),
                             ExplosionResult::Ash => (
                                 Thing::Floor.to_u8().unwrap(),
                                 0x08,
-                                0x00,
                             ),
                             ExplosionResult::Fire => (
                                 Thing::Fire.to_u8().unwrap(),
                                 0x0C,
-                                0x00,
                             ),
                         };
+                        board.put_at(&coord, thing, color, 0x00);
                     } else {
                         explosion.stage += 1;
-                        board.level[level_idx].2 = explosion.to_param();
+                        board.level_at_mut(&coord).2 = explosion.to_param();
                     }
                 }
 
                 Thing::Fire => {
                     if rand::random::<u8>() >= 20 {
-                        let cur_param = board.level[level_idx].2;
+                        let cur_param = board.level_at(&coord).2;
                         if cur_param < 5 {
-                            board.level[level_idx].2 += 1;
+                            board.level_at_mut(&coord).2 += 1;
                         } else {
-                            board.level[level_idx].2 = 0;
+                            board.level_at_mut(&coord).2 = 0;
                         }
                     }
 
                     let rval = rand::random::<u8>();
                     if rval < 8 {
                         if rval == 1 && !board.fire_burns_forever {
-                            board.level[level_idx] = (
+                            board.put_at(
+                                &coord,
                                 Thing::Floor.to_u8().unwrap(),
                                 0x08,
                                 0x00,
@@ -1600,22 +1602,25 @@ fn update_board(
                         }
 
                         let dirs = [
-                            (0i16, -1),
-                            (0, 1),
-                            (1, 0),
-                            (-1, 0),
+                            CardinalDirection::North,
+                            CardinalDirection::South,
+                            CardinalDirection::East,
+                            CardinalDirection::West,
                         ];
-                        for &(xdiff, ydiff) in &dirs {
-                            if (y == 0 && ydiff < 0) ||
-                                (x == 0 && xdiff < 0) ||
-                                (y == board.height - 1 && ydiff > 0) ||
-                                (x == board.width - 1  && xdiff > 0)
-                            {
-                                continue;
-                            }
-                            let level_idx = (y as i16 + ydiff) as usize * board.width + (x as i16 + xdiff) as usize;
-                            let thing_id = board.level[level_idx].0;
-                            let thing = Thing::from_u8(thing_id).unwrap();
+                        for dir in &dirs {
+                            let adjusted = adjust_coordinate(
+                                coord,
+                                board,
+                                *dir,
+                            );
+                            let coord = match adjusted {
+                                Some(coord) => coord,
+                                None => continue,
+                            };
+
+                            let thing = board.thing_at(&coord);
+                            let level = board.level_at(&coord);
+                            let thing_id = level.0;
 
                             let spread =
                                 (thing == Thing::Space && board.fire_burns_space) ||
@@ -1623,12 +1628,13 @@ fn update_board(
                                  thing_id <= Thing::ThickWeb.to_u8().unwrap() &&
                                  board.fire_burns_fakes) ||
                                 (thing == Thing::Tree && board.fire_burns_trees) ||
-                                (board.level[level_idx].1 == 0x06 &&
+                                (level.1 == 0x06 &&
                                  board.fire_burns_brown &&
-                                 board.level[level_idx].0 < Thing::Sensor.to_u8().unwrap());
+                                 thing_id < Thing::Sensor.to_u8().unwrap());
 
                             if spread {
-                                board.level[level_idx] = (
+                                board.put_at(
+                                    &coord,
                                     Thing::Fire.to_u8().unwrap(),
                                     0x0C,
                                     0x00,
