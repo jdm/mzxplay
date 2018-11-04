@@ -1229,6 +1229,20 @@ fn update_robot(
                 board.remaining_message_cycles = 0;
             }
 
+            Command::PutPlayerXY(ref x, ref y) => {
+                let context = CounterContext::from(board, robot_id.as_robot(&state.global_robot, robots));
+                let pos = mode.resolve_xy(
+                    x,
+                    y,
+                    counters,
+                    context,
+                    RelativePart::First,
+                );
+                let old_player_pos = board.player_pos;
+                board.move_level_to(&old_player_pos, &pos);
+                board.player_pos = pos;
+            }
+
             ref cmd => warn!("ignoring {:?}", cmd),
         }
 
