@@ -590,7 +590,7 @@ fn update_robot(
                     let context = CounterContext::from(board, &robots[robot_id]);
                     let val = n.resolve(counters, context) as i32;
                     if let Some(ref n2) = *n2 {
-                        let upper = n2.resolve(counters, context) as i32;
+                        let upper = n2.resolve(counters, context);
                         let range = (upper - val).abs() as u32;
                         (rand::random::<u32>() % range) as i32 + val
                     } else {
@@ -608,7 +608,7 @@ fn update_robot(
                     (
                         counters.get(s, context),
                         if let Some(ref n2) = *n2 {
-                            let upper = n2.resolve(counters, context) as i32;
+                            let upper = n2.resolve(counters, context);
                             let range = (upper - val).abs() as u32;
                             (rand::random::<u32>() % range) as i32 + val
                         } else {
@@ -623,11 +623,11 @@ fn update_robot(
             Command::Inc(ref s, ref n, ref n2) => {
                 let (initial, val) = {
                     let context = CounterContext::from(board, &robots[robot_id]);
-                    let val = n.resolve(counters, context) as i32;
+                    let val = n.resolve(counters, context);
                     (
                         counters.get(s, context),
                         if let Some(ref n2) = *n2 {
-                            let upper = n2.resolve(counters, context) as i32;
+                            let upper = n2.resolve(counters, context);
                             let range = (upper - val).abs() as u32;
                             (rand::random::<u32>() % range) as i32 + val
                         } else {
@@ -644,7 +644,7 @@ fn update_robot(
                     let context = CounterContext::from(board, &robots[robot_id]);
                     (
                         counters.get(s, context),
-                        n.resolve(counters, context) as i32,
+                        n.resolve(counters, context),
                     )
                 };
                 let context = CounterContextMut::from(board, &mut robots[robot_id]);
@@ -656,7 +656,7 @@ fn update_robot(
                     let context = CounterContext::from(board, &robots[robot_id]);
                     (
                         counters.get(s, context),
-                        n.resolve(counters, context) as i32,
+                        n.resolve(counters, context),
                     )
                 };
                 let context = CounterContextMut::from(board, &mut robots[robot_id]);
@@ -668,7 +668,7 @@ fn update_robot(
                     let context = CounterContext::from(board, &robots[robot_id]);
                     (
                         counters.get(s, context),
-                        n.resolve(counters, context) as i32,
+                        n.resolve(counters, context),
                     )
                 };
                 let context = CounterContextMut::from(board, &mut robots[robot_id]);
@@ -680,7 +680,7 @@ fn update_robot(
                     let context = CounterContext::from(board, &robots[robot_id]);
                     (
                         counters.get(s, context),
-                        n.resolve(counters, context) as i32,
+                        n.resolve(counters, context),
                         l.eval(counters, context),
                     )
                 };
