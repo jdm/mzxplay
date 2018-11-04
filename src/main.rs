@@ -1818,12 +1818,9 @@ fn run(world_path: &Path) {
             }
             Some(InputResult::Transport(id, color, dest_board_id)) => {
                 let dest_board = &mut world.boards[dest_board_id as usize];
-                if let Some(coord) = dest_board.find(id, color) {
-                    board_id = dest_board_id as usize;
-                    enter_board(dest_board, coord, &mut world.board_robots[dest_board_id as usize]);
-                } else {
-                    warn!("Couldn't find destination in {:?}", dest_board.title);
-                }
+                let coord = dest_board.find(id, color).unwrap_or(dest_board.player_pos);
+                board_id = dest_board_id as usize;
+                enter_board(dest_board, coord, &mut world.board_robots[dest_board_id as usize]);
             }
             Some(InputResult::Collide(pos)) => {
                 let board = &world.boards[board_id];
