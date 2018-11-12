@@ -776,6 +776,7 @@ fn update_robot(
             Command::IfCondition(ref condition, ref l, invert) => {
                 let robot = robots.get_mut(robot_id);
                 let mut result = robot.is(condition, board, key);
+                debug!("condition {:?}: {}", condition, result);
                 if invert {
                     result = !result;
                 }
@@ -1213,6 +1214,7 @@ fn update_robot(
                     (src, w, h, dest)
                 };
 
+                debug!("copying from {:?} for {}x{} to {:?}", src, w, h, dest);
                 if overlay {
                     board.copy_overlay(src, Size(w, h), dest);
                 } else {
@@ -1343,6 +1345,20 @@ fn update_robot(
                 let old_player_pos = board.player_pos;
                 board.move_level_to(&old_player_pos, &pos);
                 board.player_pos = pos;
+            }
+
+            Command::MovePlayerDir(ref dir, ref blocked) => {
+                let robot = robots.get_mut(robot_id);
+                let context = CounterContext::from(board, robot, state);
+                let blocked = blocked.as_ref().map(|b| b.eval(counters, context));
+                let new_pos = dir_to_cardinal_dir(robot, dir)
+                    .and_then(|dir| adjust_coordinate(board.player_pos, board, dir));
+                if let Some(new_pos) = new_pos {
+                    let player_pos = board.player_pos;
+                    board.move_level_to(&player_pos, &new_pos);
+                } else if let Some(blocked) = blocked {
+                    advance = !jump_robot_to_label(robot, blocked);
+                }
             }
 
             ref cmd => warn!("ignoring {:?}", cmd),
