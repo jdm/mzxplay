@@ -18,11 +18,8 @@ use libmzx::{
 use num_traits::{FromPrimitive, ToPrimitive};
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
-//use sdl2::mouse::Cursor;
 use sdl2::pixels::Color;
-//use sdl2::rect::Rect;
 use sdl2::render::Canvas;
-//use sdl2::surface::Surface;
 use sdl2::video::Window;
 use std::env;
 use std::fs::File;
@@ -78,7 +75,7 @@ struct InputState {
     down_pressed: bool,
     space_pressed: bool,
     delete_pressed: bool,
-    _to_process: Option<Keycode>,
+    pressed_keycode: Option<Keycode>,
 }
 
 enum GameStateChange {
@@ -95,6 +92,12 @@ fn handle_key_input(
     down: bool,
     is_title_screen: bool,
 ) -> Option<GameStateChange> {
+    if down {
+        input_state.pressed_keycode = keycode;
+    } else {
+        input_state.pressed_keycode = None;
+    }
+
     let keycode = match keycode {
         Some(k) => k,
         None => return None,
@@ -129,6 +132,7 @@ enum InputResult {
     ExitBoard(CardinalDirection),
     Collide(Coordinate<u16>),
     Transport(u8, u8, u8),
+    KeyLabel(u8),
 }
 
 fn convert_input(input_state: &InputState) -> Option<KeyPress> {
@@ -149,11 +153,59 @@ fn convert_input(input_state: &InputState) -> Option<KeyPress> {
     })
 }
 
+fn keycode_to_key(keycode: Keycode) -> Option<u8> {
+    Some(match keycode {
+        Keycode::A => b'a',
+        Keycode::B => b'b',
+        Keycode::C => b'c',
+        Keycode::D => b'd',
+        Keycode::E => b'e',
+        Keycode::F => b'f',
+        Keycode::G => b'g',
+        Keycode::H => b'h',
+        Keycode::I => b'i',
+        Keycode::J => b'j',
+        Keycode::K => b'k',
+        Keycode::L => b'l',
+        Keycode::M => b'm',
+        Keycode::N => b'n',
+        Keycode::O => b'o',
+        Keycode::P => b'p',
+        Keycode::Q => b'q',
+        Keycode::R => b'r',
+        Keycode::S => b's',
+        Keycode::T => b't',
+        Keycode::U => b'u',
+        Keycode::V => b'v',
+        Keycode::W => b'w',
+        Keycode::X => b'x',
+        Keycode::Y => b'y',
+        Keycode::Z => b'z',
+        Keycode::Num0 => b'0',
+        Keycode::Num1 => b'1',
+        Keycode::Num2 => b'2',
+        Keycode::Num3 => b'3',
+        Keycode::Num4 => b'4',
+        Keycode::Num5 => b'5',
+        Keycode::Num6 => b'6',
+        Keycode::Num7 => b'7',
+        Keycode::Num8 => b'8',
+        Keycode::Num9 => b'9',
+        _ => return None,
+    })
+}
+
 fn process_input(
     board: &mut Board,
     input_state: &InputState,
     world_state: &mut WorldState,
 ) -> Option<InputResult> {
+    world_state.key_pressed = input_state.pressed_keycode.map_or(0, |k| k as i32);
+
+    if let Some(key) = input_state.pressed_keycode.and_then(|k| keycode_to_key(k)) {
+        return Some(InputResult::KeyLabel(key));
+    }
+
     let player_pos = board.player_pos;
     let xdiff  = if !world_state.player_locked_ew && input_state.left_pressed {
         world_state.player_face_dir = 3;
@@ -1929,12 +1981,14 @@ fn run(world_path: &Path) {
                     warn!("Edge of board with no exit.");
                 }
             }
+
             Some(InputResult::Transport(id, color, dest_board_id)) => {
                 let dest_board = &mut world.boards[dest_board_id as usize];
                 let coord = dest_board.find(id, color).unwrap_or(dest_board.player_pos);
                 board_id = dest_board_id as usize;
                 enter_board(dest_board, coord, &mut world.all_robots);
             }
+
             Some(InputResult::Collide(pos)) => {
                 let board = &world.boards[board_id];
                 let (_id, _color, param) = board.level_at(&pos);
@@ -1951,6 +2005,18 @@ fn run(world_path: &Path) {
 
                 }
             }
+
+            Some(InputResult::KeyLabel(k)) => {
+                let mut name = b"key".to_vec();
+                name.push(k);
+                let label = ByteString::from(name);
+                let board = &world.boards[board_id];
+                let mut robots = Robots::new(board, &mut world.all_robots);
+                robots.foreach(|robot, _id| {
+                    send_robot_to_label(robot, EvaluatedByteString(label.clone()));
+                });
+            }
+
             None => (),
         }
 
