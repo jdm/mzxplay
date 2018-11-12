@@ -10,9 +10,9 @@ extern crate time;
 
 use libmzx::{
     Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Command, Thing,
-    WorldState, Counters, Resolve, Operator, ExtendedColorValue, ExtendedParam,
+    WorldState, Counters, Resolve, Operator, ExtendedColorValue, ExtendedParam, RelativeDirBasis,
     ColorValue, ParamValue, CharId, ByteString, Explosion, ExplosionResult, RelativePart,
-    SignedNumeric, Color as MzxColor, RunStatus, Size, dir_to_cardinal_dir,
+    SignedNumeric, Color as MzxColor, RunStatus, Size, dir_to_cardinal_dir, dir_to_cardinal_dir_rel,
     adjust_coordinate, KeyPress, CounterContext, CounterContextMut,
 };
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -973,10 +973,20 @@ fn update_robot(
                 });
             }
 
-            Command::SendDir(ref d, ref l) => {
+            Command::SendDir(ref d, ref l, player) => {
                 let robot = robots.get(robot_id);
-                if let Some(dir) = dir_to_cardinal_dir(robot, d) {
-                    let adjusted = adjust_coordinate(robot.position, board, dir);
+                let basis = if player {
+                    RelativeDirBasis::from_player(board)
+                } else {
+                    RelativeDirBasis::from_robot(robot)
+                };
+                if let Some(dir) = dir_to_cardinal_dir_rel(basis, d) {
+                    let source_pos = if player {
+                        board.player_pos
+                    } else {
+                        robot.position
+                    };
+                    let adjusted = adjust_coordinate(source_pos, board, dir);
                     if let Some(coord) = adjusted {
                         let thing = board.thing_at(&coord);
                         if thing == Thing::Robot || thing == Thing::RobotPushable {
