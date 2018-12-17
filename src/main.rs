@@ -13,10 +13,9 @@ use crate::robot::{
     Robots, RobotId, send_robot_to_label, EvaluatedByteString, BuiltInLabel,
 };
 use libmzx::{
-    Renderer, render, load_world, CardinalDirection, Coordinate, Board, Thing,
-    WorldState, Counters, ExtendedColorValue, ExtendedParam, ByteString, KeyPress,
+    Renderer, render, load_world, CardinalDirection, Coordinate, Board, Thing, World,
+    WorldState, Counters, ByteString, KeyPress,
 };
-use num_traits::ToPrimitive;
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
 use sdl2::pixels::Color;
@@ -273,6 +272,124 @@ enum StateChange {
     Restore(usize, Coordinate<u16>),
 }
 
+fn tick_game_loop(
+    world: &mut World,
+    world_path: &Path,
+    input_state: &InputState,
+    counters: &mut Counters,
+    board_id: &mut usize,
+) {
+    let orig_player_pos = world.boards[*board_id].player_pos;
+
+    let key = convert_input(input_state);
+    let result = process_input(&mut world.boards[*board_id], &input_state, &mut world.state);
+    match result {
+        Some(InputResult::ExitBoard(dir)) => {
+            let id = {
+                let board = &world.boards[*board_id];
+                match dir {
+                    CardinalDirection::North => board.exits.0,
+                    CardinalDirection::South => board.exits.1,
+                    CardinalDirection::East => board.exits.2,
+                    CardinalDirection::West => board.exits.3,
+                }
+            };
+            if let Some(id) = id {
+                let old_player_pos = world.boards[*board_id].player_pos;
+                *board_id = id.0 as usize;
+                let board = &mut world.boards[*board_id];
+                let player_pos = match dir {
+                    CardinalDirection::North =>
+                        Coordinate(old_player_pos.0, board.height as u16 - 1),
+                    CardinalDirection::South =>
+                        Coordinate(old_player_pos.0, 0),
+                    CardinalDirection::East =>
+                        Coordinate(0, old_player_pos.1),
+                    CardinalDirection::West =>
+                        Coordinate(board.width as u16 - 1, old_player_pos.1),
+                };
+                enter_board(board, player_pos, &mut world.all_robots);
+            } else {
+                warn!("Edge of board with no exit.");
+            }
+        }
+
+        Some(InputResult::Transport(id, color, dest_board_id)) => {
+            let dest_board = &mut world.boards[dest_board_id as usize];
+            let coord = dest_board.find(id, color).unwrap_or(dest_board.player_pos);
+            *board_id = dest_board_id as usize;
+            enter_board(dest_board, coord, &mut world.all_robots);
+        }
+
+        Some(InputResult::Collide(pos)) => {
+            let board = &world.boards[*board_id];
+            let (_id, _color, param) = board.level_at(&pos);
+            let thing = board.thing_at(&pos);
+            match thing {
+                Thing::Robot | Thing::RobotPushable => {
+                    let robot_id = RobotId::from(*param);
+                    let mut robots = Robots::new(board, &mut world.all_robots);
+                    let robot = robots.get_mut(robot_id);
+                    send_robot_to_label(robot, BuiltInLabel::Touch);
+                }
+
+                _ => warn!("ignoring collision with {:?} at {:?}", thing, pos)
+
+            }
+        }
+
+        Some(InputResult::KeyLabel(k)) => {
+            let mut name = b"key".to_vec();
+            name.push(k);
+            let label = ByteString::from(name);
+            let board = &world.boards[*board_id];
+            let mut robots = Robots::new(board, &mut world.all_robots);
+            robots.foreach(|robot, _id| {
+                send_robot_to_label(robot, EvaluatedByteString::no_eval_needed(label.clone()));
+            });
+        }
+
+        None => (),
+    }
+
+    if world.boards[*board_id].player_pos != orig_player_pos &&
+        !world.state.scroll_locked
+    {
+        reset_view(&mut world.boards[*board_id]);
+    }
+
+    let change = update_board(
+        &mut world.state,
+        key,
+        world_path,
+        counters,
+        &mut world.boards[*board_id],
+        *board_id,
+        &mut world.all_robots,
+    );
+
+    if let Some(change) = change {
+        let new_board = match change {
+            StateChange::Teleport(board, coord) => {
+                let id = world.boards.iter().position(|b| b.title == board);
+                if let Some(id) = id {
+                    Some((id, coord))
+                } else {
+                    warn!("Couldn't find board {:?}", board);
+                    None
+                }
+            }
+            StateChange::Restore(id, coord) => {
+                Some((id, coord))
+            }
+        };
+        if let Some((id, coord)) = new_board {
+            *board_id = id;
+            enter_board(&mut world.boards[id], coord, &mut world.all_robots);
+        }
+    }
+}
+
 fn run(world_path: &Path) {
     let world_data = match File::open(&world_path) {
         Ok(mut file) => {
@@ -320,8 +437,6 @@ fn run(world_path: &Path) {
     let mut counters = Counters::new();
 
     'mainloop: loop {
-        let mut orig_player_pos = world.boards[board_id].player_pos;
-
         let start = time::precise_time_ns();
         for event in events.poll_iter() {
             let change = match event {
@@ -357,7 +472,6 @@ fn run(world_path: &Path) {
                     is_title_screen = false;
                     board_id = world.starting_board_number.0 as usize;
                     let pos = world.boards[board_id].player_pos;
-                    orig_player_pos = pos;
                     enter_board(&mut world.boards[board_id], pos, &mut world.all_robots);
                     world.state.charset = world.state.initial_charset;
                     world.state.palette = world.state.initial_palette.clone();
@@ -370,113 +484,13 @@ fn run(world_path: &Path) {
             }
         }
 
-        let key = convert_input(&input_state);
-        let result = process_input(&mut world.boards[board_id], &input_state, &mut world.state);
-        match result {
-            Some(InputResult::ExitBoard(dir)) => {
-                let id = {
-                    let board = &world.boards[board_id];
-                    match dir {
-                        CardinalDirection::North => board.exits.0,
-                        CardinalDirection::South => board.exits.1,
-                        CardinalDirection::East => board.exits.2,
-                        CardinalDirection::West => board.exits.3,
-                    }
-                };
-                if let Some(id) = id {
-                    let old_player_pos = world.boards[board_id].player_pos;
-                    board_id = id.0 as usize;
-                    let board = &mut world.boards[board_id];
-                    let player_pos = match dir {
-                        CardinalDirection::North =>
-                            Coordinate(old_player_pos.0, board.height as u16 - 1),
-                        CardinalDirection::South =>
-                            Coordinate(old_player_pos.0, 0),
-                        CardinalDirection::East =>
-                            Coordinate(0, old_player_pos.1),
-                        CardinalDirection::West =>
-                            Coordinate(board.width as u16 - 1, old_player_pos.1),
-                    };
-                    enter_board(board, player_pos, &mut world.all_robots);
-                } else {
-                    warn!("Edge of board with no exit.");
-                }
-            }
-
-            Some(InputResult::Transport(id, color, dest_board_id)) => {
-                let dest_board = &mut world.boards[dest_board_id as usize];
-                let coord = dest_board.find(id, color).unwrap_or(dest_board.player_pos);
-                board_id = dest_board_id as usize;
-                enter_board(dest_board, coord, &mut world.all_robots);
-            }
-
-            Some(InputResult::Collide(pos)) => {
-                let board = &world.boards[board_id];
-                let (_id, _color, param) = board.level_at(&pos);
-                let thing = board.thing_at(&pos);
-                match thing {
-                    Thing::Robot | Thing::RobotPushable => {
-                        let robot_id = RobotId::from(*param);
-                        let mut robots = Robots::new(board, &mut world.all_robots);
-                        let robot = robots.get_mut(robot_id);
-                        send_robot_to_label(robot, BuiltInLabel::Touch);
-                    }
-
-                    _ => warn!("ignoring collision with {:?} at {:?}", thing, pos)
-
-                }
-            }
-
-            Some(InputResult::KeyLabel(k)) => {
-                let mut name = b"key".to_vec();
-                name.push(k);
-                let label = ByteString::from(name);
-                let board = &world.boards[board_id];
-                let mut robots = Robots::new(board, &mut world.all_robots);
-                robots.foreach(|robot, _id| {
-                    send_robot_to_label(robot, EvaluatedByteString::no_eval_needed(label.clone()));
-                });
-            }
-
-            None => (),
-        }
-
-        if world.boards[board_id].player_pos != orig_player_pos &&
-            !world.state.scroll_locked
-        {
-            reset_view(&mut world.boards[board_id]);
-        }
-
-        let change = update_board(
-            &mut world.state,
-            key,
-            world_path,
+        tick_game_loop(
+            &mut world,
+            &world_path,
+            &input_state,
             &mut counters,
-            &mut world.boards[board_id],
-            board_id,
-            &mut world.all_robots,
+            &mut board_id,
         );
-
-        if let Some(change) = change {
-            let new_board = match change {
-                StateChange::Teleport(board, coord) => {
-                    let id = world.boards.iter().position(|b| b.title == board);
-                    if let Some(id) = id {
-                        Some((id, coord))
-                    } else {
-                        warn!("Couldn't find board {:?}", board);
-                        None
-                    }
-                }
-                StateChange::Restore(id, coord) => {
-                    Some((id, coord))
-                }
-            };
-            if let Some((id, coord)) = new_board {
-                board_id = id;
-                enter_board(&mut world.boards[id], coord, &mut world.all_robots);
-            }
-        }
 
         {
             let mut renderer = SdlRenderer {
