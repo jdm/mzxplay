@@ -1352,10 +1352,10 @@ pub(crate) fn update_robot(
         let robot = robots.get_mut(robot_id);
         if !robot_id.is_global() {
             if !board.thing_at(&robot.position).is_robot() {
-                info!("current robot not present at reported position; terminating");
+                warn!("current robot not present at reported position; terminating");
                 robot.alive = false;
             } else if RobotId::from(board.level_at(&robot.position).2) != robot_id {
-                info!("current robot does not match robot ID at reported position; terminating");
+                warn!("current robot does not match robot ID at reported position; terminating");
                 robot.alive = false;
             }
         }
