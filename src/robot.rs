@@ -1,5 +1,6 @@
+use crate::board::put_thing;
 use crate::{
-    put_thing, reset_view, StateChange,
+    reset_view, StateChange,
 };
 use libmzx::{
     KeyPress, Counters, RunStatus, CounterContext, Board, Robot, Command, Thing, WorldState,

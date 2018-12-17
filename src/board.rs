@@ -214,3 +214,31 @@ pub(crate) fn enter_board(board: &mut Board, player_pos: Coordinate<u16>, robots
         send_robot_to_label(robot, BuiltInLabel::JustEntered);
     })
 }
+
+pub(crate) fn put_thing(
+    board: &mut Board,
+    color: ExtendedColorValue,
+    thing: Thing,
+    param: ExtendedParam,
+    pos: Coordinate<u16>
+) {
+    let color = match color {
+        ExtendedColorValue::Known(c) =>
+            c.0,
+        // TODO: have a table of default foreground colors for things,
+        //       get the current background color at destination.
+        ExtendedColorValue::Unknown(Some(_), None) |
+        ExtendedColorValue::Unknown(None, Some(_)) |
+        ExtendedColorValue::Unknown(None, None) |
+        ExtendedColorValue::Unknown(Some(_), Some(_)) =>
+            0x07, //HACK
+    };
+
+    // TODO: have a table of default parameters for things.
+    let param = match param {
+        ExtendedParam::Specific(p) => p.0,
+        ExtendedParam::Any => 0x00, //HACK
+    };
+
+    board.put_at(&pos, thing.to_u8().unwrap(), color, param);
+}
