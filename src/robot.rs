@@ -1,5 +1,5 @@
 use crate::{
-    put_thing, move_robot_to, move_robot, reset_view, StateChange, Move,
+    put_thing, reset_view, StateChange,
 };
 use libmzx::{
     KeyPress, Counters, RunStatus, CounterContext, Board, Robot, Command, Thing, WorldState,
@@ -13,6 +13,79 @@ use std::fs::File;
 use std::io::Read;
 use std::ops::Deref;
 use std::path::Path;
+
+enum MoveResult {
+    Move(Coordinate<u16>),
+    Edge,
+}
+
+#[derive(PartialEq)]
+enum Move {
+    Moved,
+    Blocked,
+}
+
+fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) -> Move {
+    let result = match dir {
+        CardinalDirection::North => {
+            if robot.position.1 == 0 {
+                MoveResult::Edge
+            } else {
+                MoveResult::Move(Coordinate(robot.position.0, robot.position.1 - 1))
+            }
+        }
+        CardinalDirection::South => {
+            if robot.position.1 as usize == board.height - 1 {
+                MoveResult::Edge
+            } else {
+                MoveResult::Move(Coordinate(robot.position.0, robot.position.1 + 1))
+            }
+        }
+        CardinalDirection::East => {
+            if robot.position.0 as usize == board.width - 1 {
+                MoveResult::Edge
+            } else {
+                MoveResult::Move(Coordinate(robot.position.0 + 1, robot.position.1))
+            }
+        }
+        CardinalDirection::West => {
+            if robot.position.0 == 0 {
+                MoveResult::Edge
+            } else {
+                MoveResult::Move(Coordinate(robot.position.0 - 1, robot.position.1))
+            }
+        }
+    };
+    match result {
+        MoveResult::Edge => {
+            if !jump_robot_to_label(robot, BuiltInLabel::Edge) {
+                jump_robot_to_label(robot, BuiltInLabel::Thud);
+            }
+            Move::Blocked
+        }
+        MoveResult::Move(new_pos) => {
+            let thing = board.thing_at(&new_pos);
+            if thing.is_solid() {
+                jump_robot_to_label(robot, BuiltInLabel::Thud);
+                Move::Blocked
+            } else {
+                board.move_level_to(&robot.position, &new_pos);
+                robot.position = new_pos;
+                Move::Moved
+            }
+        }
+    }
+}
+
+fn move_robot_to(robot: &mut Robot, board: &mut Board, pos: Coordinate<u16>) {
+    let thing = board.thing_at(&pos);
+    if thing == Thing::Player {
+        return;
+    }
+    // TODO: check if thing can move to under layer
+    board.move_level_to(&robot.position, &pos);
+    robot.position = pos;
+}
 
 enum CoordinatePart {
     X,

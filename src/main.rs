@@ -10,10 +10,10 @@ extern crate time;
 
 use crate::board::{update_board, enter_board};
 use crate::robot::{
-    Robots, RobotId, send_robot_to_label, jump_robot_to_label, EvaluatedByteString, BuiltInLabel,
+    Robots, RobotId, send_robot_to_label, EvaluatedByteString, BuiltInLabel,
 };
 use libmzx::{
-    Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Thing,
+    Renderer, render, load_world, CardinalDirection, Coordinate, Board, Thing,
     WorldState, Counters, ExtendedColorValue, ExtendedParam, ByteString, KeyPress,
 };
 use num_traits::ToPrimitive;
@@ -294,79 +294,6 @@ fn put_thing(
     };
 
     board.put_at(&pos, thing.to_u8().unwrap(), color, param);
-}
-
-enum MoveResult {
-    Move(Coordinate<u16>),
-    Edge,
-}
-
-fn move_robot_to(robot: &mut Robot, board: &mut Board, pos: Coordinate<u16>) {
-    let thing = board.thing_at(&pos);
-    if thing == Thing::Player {
-        return;
-    }
-    // TODO: check if thing can move to under layer
-    board.move_level_to(&robot.position, &pos);
-    robot.position = pos;
-}
-
-#[derive(PartialEq)]
-enum Move {
-    Moved,
-    Blocked,
-}
-
-fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) -> Move {
-    let result = match dir {
-        CardinalDirection::North => {
-            if robot.position.1 == 0 {
-                MoveResult::Edge
-            } else {
-                MoveResult::Move(Coordinate(robot.position.0, robot.position.1 - 1))
-            }
-        }
-        CardinalDirection::South => {
-            if robot.position.1 as usize == board.height - 1 {
-                MoveResult::Edge
-            } else {
-                MoveResult::Move(Coordinate(robot.position.0, robot.position.1 + 1))
-            }
-        }
-        CardinalDirection::East => {
-            if robot.position.0 as usize == board.width - 1 {
-                MoveResult::Edge
-            } else {
-                MoveResult::Move(Coordinate(robot.position.0 + 1, robot.position.1))
-            }
-        }
-        CardinalDirection::West => {
-            if robot.position.0 == 0 {
-                MoveResult::Edge
-            } else {
-                MoveResult::Move(Coordinate(robot.position.0 - 1, robot.position.1))
-            }
-        }
-    };
-    match result {
-        MoveResult::Edge => {
-            if !jump_robot_to_label(robot, BuiltInLabel::Edge) {
-                jump_robot_to_label(robot, BuiltInLabel::Thud);
-            }
-            Move::Blocked
-        }
-        MoveResult::Move(new_pos) => {
-            let thing = board.thing_at(&new_pos);
-            if thing.is_solid() {
-                jump_robot_to_label(robot, BuiltInLabel::Thud);
-                Move::Blocked
-            } else {
-                board.move_level_to(&robot.position, &new_pos);
-                robot.position = new_pos;
-                Move::Moved
-            }
-        }
-    }
 }
 
 enum StateChange {
