@@ -8,12 +8,13 @@ extern crate rand;
 extern crate sdl2;
 extern crate time;
 
-use crate::robot::{update_robot, Robots, RobotId};
+use crate::board::{update_board, enter_board};
+use crate::robot::{
+    Robots, RobotId, send_robot_to_label, jump_robot_to_label, EvaluatedByteString, BuiltInLabel,
+};
 use libmzx::{
-    Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Command, Thing,
-    WorldState, Counters, Resolve, ExtendedColorValue, ExtendedParam,
-    ByteString, Explosion, ExplosionResult, RelativePart,
-    SignedNumeric, RunStatus, adjust_coordinate, KeyPress, CounterContext,
+    Renderer, render, load_world, CardinalDirection, Coordinate, Board, Robot, Thing,
+    WorldState, Counters, ExtendedColorValue, ExtendedParam, ByteString, KeyPress,
 };
 use num_traits::ToPrimitive;
 use sdl2::event::Event;
@@ -24,11 +25,11 @@ use sdl2::video::Window;
 use std::env;
 use std::fs::File;
 use std::io::Read;
-use std::ops::Deref;
 use std::path::Path;
 use std::process::exit;
 use std::time::Duration;
 
+mod board;
 mod robot;
 
 struct SdlRenderer<'a> {
@@ -267,67 +268,6 @@ fn process_input(
     None
 }
 
-enum CoordinatePart {
-    X,
-    Y,
-}
-
-trait CoordinateExtractor {
-    type CoordinateType;
-    fn extract(&self, part: CoordinatePart) -> Self::CoordinateType;
-}
-
-impl<T: Copy> CoordinateExtractor for Coordinate<T> {
-    type CoordinateType = T;
-    fn extract(&self, part: CoordinatePart) -> T {
-        match part {
-            CoordinatePart::X => self.0,
-            CoordinatePart::Y => self.1,
-        }
-    }
-}
-
-enum Relative {
-    None,
-    Coordinate(Option<RelativePart>, Coordinate<u16>),
-}
-
-impl Relative {
-    fn resolve_xy<'a>(
-        &self,
-        x_value: &SignedNumeric,
-        y_value: &SignedNumeric,
-        counters: &Counters,
-        context: CounterContext<'a>,
-        part: RelativePart,
-    ) -> Coordinate<u16> {
-        let x = self.resolve(x_value, counters, context, part, CoordinatePart::X);
-        let y = self.resolve(y_value, counters, context, part, CoordinatePart::Y);
-        Coordinate(x.max(0) as u16, y.max(0) as u16)
-    }
-
-    fn resolve<'a>(
-        &self,
-        value: &SignedNumeric,
-        counters: &Counters,
-        context: CounterContext<'a>,
-        part: RelativePart,
-        coord_part: CoordinatePart,
-    ) -> i16 {
-        let v = value.resolve(counters, context) as i16;
-        match *self {
-            Relative::None => v,
-            Relative::Coordinate(ref value_part, ref coord) => {
-                if value_part.map_or(true, |p| p == part) {
-                    v + coord.extract(coord_part) as i16
-                } else {
-                    v
-                }
-            }
-        }
-    }
-}
-
 fn put_thing(
     board: &mut Board,
     color: ExtendedColorValue,
@@ -354,69 +294,6 @@ fn put_thing(
     };
 
     board.put_at(&pos, thing.to_u8().unwrap(), color, param);
-}
-
-enum BuiltInLabel {
-    Thud,
-    Edge,
-    Bombed,
-    JustEntered,
-    Touch,
-}
-
-impl Into<EvaluatedByteString> for BuiltInLabel {
-    fn into(self) -> EvaluatedByteString {
-        EvaluatedByteString(ByteString::from(match self {
-            BuiltInLabel::Thud => "thud",
-            BuiltInLabel::Edge => "edge",
-            BuiltInLabel::Bombed => "bombed",
-            BuiltInLabel::JustEntered => "justentered",
-            BuiltInLabel::Touch => "touch",
-        }))
-    }
-}
-
-#[derive(Clone, Debug)]
-struct EvaluatedByteString(ByteString);
-
-impl Deref for EvaluatedByteString {
-    type Target = ByteString;
-    fn deref(&self) -> &ByteString {
-        &self.0
-    }
-}
-
-trait Evaluator {
-    fn eval<'a>(&self, counters: &Counters, context: CounterContext<'a>) -> EvaluatedByteString;
-}
-
-impl Evaluator for ByteString {
-    fn eval<'a>(&self, counters: &Counters, context: CounterContext<'a>) -> EvaluatedByteString {
-        EvaluatedByteString(self.evaluate(counters, context))
-    }
-}
-
-fn send_robot_to_label<S: Into<EvaluatedByteString>>(robot: &mut Robot, label: S) -> bool {
-    if robot.locked {
-        return false;
-    }
-    jump_robot_to_label(robot, label)
-}
-
-fn jump_robot_to_label<S: Into<EvaluatedByteString>>(robot: &mut Robot, label: S) -> bool {
-    let label = label.into();
-    let label_pos = robot
-        .program
-        .iter()
-        .position(|c| c == &Command::Label(label.deref().clone()));
-    if let Some(pos) = label_pos {
-        debug!("jumping {:?} to {:?}", robot.name, label);
-        robot.current_loc = 0;
-        robot.current_line = pos as u16 + 1;
-        true
-    } else {
-        false
-    }
 }
 
 enum MoveResult {
@@ -495,214 +372,6 @@ fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) -> M
 enum StateChange {
     Teleport(ByteString, Coordinate<u16>),
     Restore(usize, Coordinate<u16>),
-}
-
-fn update_board(
-    state: &mut WorldState,
-    key: Option<KeyPress>,
-    world_path: &Path,
-    counters: &mut Counters,
-    board: &mut Board,
-    board_id: usize,
-    all_robots: &mut Vec<Robot>,
-) -> Option<StateChange> {
-    let mut robots = Robots::new(board, all_robots);
-    robots.foreach(|robot, _| {
-        robot.status = RunStatus::NotRun;
-    });
-
-    let change = update_robot(
-        state,
-        key,
-        world_path,
-        counters,
-        board,
-        board_id,
-        robots,
-        RobotId::Global,
-    );
-    if change.is_some() {
-        return change;
-    }
-
-    for y in 0..board.height {
-        for x in 0..board.width {
-            let coord = Coordinate(x as u16, y as u16);
-            match board.thing_at(&coord) {
-                Thing::Robot | Thing::RobotPushable => {
-                    let robots = Robots::new(board, all_robots);
-
-                    let change = update_robot(
-                        state,
-                        key,
-                        world_path,
-                        counters,
-                        board,
-                        board_id,
-                        robots,
-                        RobotId::from(board.level_at(&coord).2)
-                    );
-                    if change.is_some() {
-                        return change;
-                    }
-                }
-
-                Thing::Explosion => {
-                    let mut explosion = Explosion::from_param(board.level_at(&coord).2);
-                    if explosion.stage == 0 {
-                        if explosion.size > 0 {
-                            explosion.size -= 1;
-                            board.level_at_mut(&coord).2 = explosion.to_param();
-
-                            let dirs = [
-                                CardinalDirection::North,
-                                CardinalDirection::South,
-                                CardinalDirection::East,
-                                CardinalDirection::West,
-                            ];
-                            for dir in &dirs {
-                                let adjusted = adjust_coordinate(
-                                    coord,
-                                    board,
-                                    *dir,
-                                );
-                                let coord = match adjusted {
-                                    Some(coord) => coord,
-                                    None => continue,
-                                };
-                                let thing = board.thing_at(&coord);
-                                if !thing.is_solid() && thing != Thing::Explosion {
-                                    board.put_at(
-                                        &coord,
-                                        Thing::Explosion.to_u8().unwrap(),
-                                        0x00,
-                                        explosion.to_param(),
-                                    );
-                                } else if thing.is_robot() {
-                                    let robot_id = RobotId::from(board.level_at(&coord).2);
-
-                                    let mut robots = Robots::new(board, all_robots);
-                                    let robot = robots.get_mut(robot_id);
-                                    send_robot_to_label(robot, BuiltInLabel::Bombed);
-                                }
-                                // TODO: hurt player.
-                            }
-                        }
-                    }
-
-                    if explosion.stage == 3 {
-                        let (thing, color) = match board.explosion_result {
-                            ExplosionResult::Nothing => (
-                                Thing::Space.to_u8().unwrap(),
-                                0x07,
-                            ),
-                            ExplosionResult::Ash => (
-                                Thing::Floor.to_u8().unwrap(),
-                                0x08,
-                            ),
-                            ExplosionResult::Fire => (
-                                Thing::Fire.to_u8().unwrap(),
-                                0x0C,
-                            ),
-                        };
-                        board.put_at(&coord, thing, color, 0x00);
-                    } else {
-                        explosion.stage += 1;
-                        board.level_at_mut(&coord).2 = explosion.to_param();
-                    }
-                }
-
-                Thing::Fire => {
-                    if rand::random::<u8>() >= 20 {
-                        let cur_param = board.level_at(&coord).2;
-                        if cur_param < 5 {
-                            board.level_at_mut(&coord).2 += 1;
-                        } else {
-                            board.level_at_mut(&coord).2 = 0;
-                        }
-                    }
-
-                    let rval = rand::random::<u8>();
-                    if rval < 8 {
-                        if rval == 1 && !board.fire_burns_forever {
-                            board.put_at(
-                                &coord,
-                                Thing::Floor.to_u8().unwrap(),
-                                0x08,
-                                0x00,
-                            );
-                        }
-
-                        let dirs = [
-                            CardinalDirection::North,
-                            CardinalDirection::South,
-                            CardinalDirection::East,
-                            CardinalDirection::West,
-                        ];
-                        for dir in &dirs {
-                            let adjusted = adjust_coordinate(
-                                coord,
-                                board,
-                                *dir,
-                            );
-                            let coord = match adjusted {
-                                Some(coord) => coord,
-                                None => continue,
-                            };
-
-                            let thing = board.thing_at(&coord);
-                            let level = board.level_at(&coord);
-                            let thing_id = level.0;
-
-                            let spread =
-                                (thing == Thing::Space && board.fire_burns_space) ||
-                                (thing_id >= Thing::Fake.to_u8().unwrap() &&
-                                 thing_id <= Thing::ThickWeb.to_u8().unwrap() &&
-                                 board.fire_burns_fakes) ||
-                                (thing == Thing::Tree && board.fire_burns_trees) ||
-                                (level.1 == 0x06 &&
-                                 board.fire_burns_brown &&
-                                 thing_id < Thing::Sensor.to_u8().unwrap());
-
-                            if spread {
-                                board.put_at(
-                                    &coord,
-                                    Thing::Fire.to_u8().unwrap(),
-                                    0x0C,
-                                    0x00,
-                                );
-                            }
-                        }
-                    }
-                }
-
-                _ => (),
-            }
-        }
-    }
-
-    state.message_color += 1;
-    if state.message_color > 0x0F {
-        state.message_color = 0x01;
-    }
-    if board.remaining_message_cycles > 0 {
-        board.remaining_message_cycles -= 1;
-    }
-
-    None
-}
-
-fn enter_board(board: &mut Board, player_pos: Coordinate<u16>, robots: &mut [Robot]) {
-    let old_pos = board.player_pos;
-    if old_pos != player_pos {
-        board.move_level_to(&old_pos, &player_pos);
-    }
-    board.player_pos = player_pos;
-    reset_view(board);
-
-    Robots::new(board, robots).foreach(|robot, _id| {
-        send_robot_to_label(robot, BuiltInLabel::JustEntered);
-    })
 }
 
 fn run(world_path: &Path) {
@@ -866,7 +535,7 @@ fn run(world_path: &Path) {
                 let board = &world.boards[board_id];
                 let mut robots = Robots::new(board, &mut world.all_robots);
                 robots.foreach(|robot, _id| {
-                    send_robot_to_label(robot, EvaluatedByteString(label.clone()));
+                    send_robot_to_label(robot, EvaluatedByteString::no_eval_needed(label.clone()));
                 });
             }
 

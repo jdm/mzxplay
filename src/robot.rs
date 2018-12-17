@@ -1,17 +1,126 @@
 use crate::{
-    Evaluator, jump_robot_to_label, send_robot_to_label, put_thing, move_robot_to, move_robot,
-    reset_view, StateChange, Relative, RelativePart, Move, EvaluatedByteString,
+    put_thing, move_robot_to, move_robot, reset_view, StateChange, Move,
 };
 use libmzx::{
     KeyPress, Counters, RunStatus, CounterContext, Board, Robot, Command, Thing, WorldState,
     Resolve, adjust_coordinate, dir_to_cardinal_dir, Size, Coordinate, Explosion, ParamValue,
     ColorValue, Color as MzxColor, ByteString, CharId, CardinalDirection, dir_to_cardinal_dir_rel,
-    RelativeDirBasis, ExtendedColorValue, ExtendedParam, Operator, CounterContextMut,
+    RelativeDirBasis, ExtendedColorValue, ExtendedParam, Operator, CounterContextMut, RelativePart,
+    SignedNumeric,
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use std::fs::File;
 use std::io::Read;
+use std::ops::Deref;
 use std::path::Path;
+
+enum CoordinatePart {
+    X,
+    Y,
+}
+
+trait CoordinateExtractor {
+    type CoordinateType;
+    fn extract(&self, part: CoordinatePart) -> Self::CoordinateType;
+}
+
+impl<T: Copy> CoordinateExtractor for Coordinate<T> {
+    type CoordinateType = T;
+    fn extract(&self, part: CoordinatePart) -> T {
+        match part {
+            CoordinatePart::X => self.0,
+            CoordinatePart::Y => self.1,
+        }
+    }
+}
+
+enum Relative {
+    None,
+    Coordinate(Option<RelativePart>, Coordinate<u16>),
+}
+
+impl Relative {
+    fn resolve_xy<'a>(
+        &self,
+        x_value: &SignedNumeric,
+        y_value: &SignedNumeric,
+        counters: &Counters,
+        context: CounterContext<'a>,
+        part: RelativePart,
+    ) -> Coordinate<u16> {
+        let x = self.resolve(x_value, counters, context, part, CoordinatePart::X);
+        let y = self.resolve(y_value, counters, context, part, CoordinatePart::Y);
+        Coordinate(x.max(0) as u16, y.max(0) as u16)
+    }
+
+    fn resolve<'a>(
+        &self,
+        value: &SignedNumeric,
+        counters: &Counters,
+        context: CounterContext<'a>,
+        part: RelativePart,
+        coord_part: CoordinatePart,
+    ) -> i16 {
+        let v = value.resolve(counters, context) as i16;
+        match *self {
+            Relative::None => v,
+            Relative::Coordinate(ref value_part, ref coord) => {
+                if value_part.map_or(true, |p| p == part) {
+                    v + coord.extract(coord_part) as i16
+                } else {
+                    v
+                }
+            }
+        }
+    }
+}
+
+pub(crate) enum BuiltInLabel {
+    Thud,
+    Edge,
+    Bombed,
+    JustEntered,
+    Touch,
+}
+
+impl Into<EvaluatedByteString> for BuiltInLabel {
+    fn into(self) -> EvaluatedByteString {
+        EvaluatedByteString(ByteString::from(match self {
+            BuiltInLabel::Thud => "thud",
+            BuiltInLabel::Edge => "edge",
+            BuiltInLabel::Bombed => "bombed",
+            BuiltInLabel::JustEntered => "justentered",
+            BuiltInLabel::Touch => "touch",
+        }))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct EvaluatedByteString(ByteString);
+
+impl EvaluatedByteString {
+    pub(crate) fn no_eval_needed(s: ByteString) -> EvaluatedByteString {
+        assert!(!s.contains(&b'&'));
+        EvaluatedByteString(s)
+    }
+}
+
+impl Deref for EvaluatedByteString {
+    type Target = ByteString;
+    fn deref(&self) -> &ByteString {
+        &self.0
+    }
+}
+
+pub(crate) trait Evaluator {
+    fn eval<'a>(&self, counters: &Counters, context: CounterContext<'a>) -> EvaluatedByteString;
+}
+
+impl Evaluator for ByteString {
+    fn eval<'a>(&self, counters: &Counters, context: CounterContext<'a>) -> EvaluatedByteString {
+        EvaluatedByteString(self.evaluate(counters, context))
+    }
+}
 
 enum BuiltInCounter {
     Xpos,
@@ -1160,4 +1269,27 @@ pub(crate) fn update_robot(
     robots.get_mut(robot_id).status = RunStatus::FinishedRunning;
 
     state_change
+}
+
+pub(crate) fn send_robot_to_label<S: Into<EvaluatedByteString>>(robot: &mut Robot, label: S) -> bool {
+    if robot.locked {
+        return false;
+    }
+    jump_robot_to_label(robot, label)
+}
+
+pub(crate) fn jump_robot_to_label<S: Into<EvaluatedByteString>>(robot: &mut Robot, label: S) -> bool {
+    let label = label.into();
+    let label_pos = robot
+        .program
+        .iter()
+        .position(|c| c == &Command::Label(label.deref().clone()));
+    if let Some(pos) = label_pos {
+        debug!("jumping {:?} to {:?}", robot.name, label);
+        robot.current_loc = 0;
+        robot.current_line = pos as u16 + 1;
+        true
+    } else {
+        false
+    }
 }
