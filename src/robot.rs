@@ -1,6 +1,6 @@
 use crate::board::put_thing;
 use crate::{
-    reset_view, StateChange,
+    reset_view, GameStateChange,
 };
 use libmzx::{
     KeyPress, Counters, RunStatus, CounterContext, Board, Robot, Command, Thing, WorldState,
@@ -297,7 +297,7 @@ impl<'a> Robots<'a> {
 enum CommandResult {
     NoAdvance,
     Advance,
-    AdvanceAndChangeState(StateChange),
+    AdvanceAndChangeState(GameStateChange),
     IgnoreLine(Option<Relative>),
     EndCycle,
 }
@@ -1067,7 +1067,7 @@ fn run_one_command(
                 x.resolve(counters, context) as u16,
                 y.resolve(counters, context) as u16,
             );
-            return CommandResult::AdvanceAndChangeState(StateChange::Teleport(b.clone(), coord));
+            return CommandResult::AdvanceAndChangeState(GameStateChange::Teleport(b.clone(), coord));
         }
 
         Command::SavePlayerPosition(ref n) => {
@@ -1084,7 +1084,7 @@ fn run_one_command(
             );
             let n = n.resolve(counters, context) as usize;
             let (board_id, pos) = state.saved_positions[n];
-            return CommandResult::AdvanceAndChangeState(StateChange::Restore(board_id, pos));
+            return CommandResult::AdvanceAndChangeState(GameStateChange::Restore(board_id, pos));
         }
 
         Command::LoopStart => {
@@ -1325,7 +1325,7 @@ pub(crate) fn update_robot(
     board_id: usize,
     mut robots: Robots,
     robot_id: RobotId,
-) -> Option<StateChange> {
+) -> Option<GameStateChange> {
     let robot = robots.get_mut(robot_id);
     if !robot.alive || robot.status == RunStatus::FinishedRunning {
         return None;

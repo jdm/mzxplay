@@ -80,8 +80,7 @@ struct InputState {
     pressed_keycode: Option<Keycode>,
 }
 
-enum GameStateChange {
-    BeginGame,
+enum OldGameStateChange {
     Speed(u64),
 }
 
@@ -92,8 +91,7 @@ fn handle_key_input(
     _keymod: Mod,
     _repeat: bool,
     down: bool,
-    is_title_screen: bool,
-) -> Option<GameStateChange> {
+) -> Option<OldGameStateChange> {
     if down {
         input_state.pressed_keycode = keycode;
     } else {
@@ -105,27 +103,20 @@ fn handle_key_input(
         None => return None,
     };
     match keycode {
-        Keycode::Num1 => return Some(GameStateChange::Speed(1)),
-        Keycode::Num2 => return Some(GameStateChange::Speed(2)),
-        Keycode::Num3 => return Some(GameStateChange::Speed(3)),
-        Keycode::Num4 => return Some(GameStateChange::Speed(4)),
+        Keycode::Num1 => return Some(OldGameStateChange::Speed(1)),
+        Keycode::Num2 => return Some(OldGameStateChange::Speed(2)),
+        Keycode::Num3 => return Some(OldGameStateChange::Speed(3)),
+        Keycode::Num4 => return Some(OldGameStateChange::Speed(4)),
         _ => (),
     }
-    if is_title_screen {
-        if down && keycode == Keycode::P {
-            return Some(GameStateChange::BeginGame);
-        }
-        return None;
-    } else {
-        match keycode {
-            Keycode::Up => input_state.up_pressed = down,
-            Keycode::Down => input_state.down_pressed = down,
-            Keycode::Left => input_state.left_pressed = down,
-            Keycode::Right => input_state.right_pressed = down,
-            Keycode::Space => input_state.space_pressed = down,
-            Keycode::Delete => input_state.delete_pressed = down,
-            _ => (),
-        }
+    match keycode {
+        Keycode::Up => input_state.up_pressed = down,
+        Keycode::Down => input_state.down_pressed = down,
+        Keycode::Left => input_state.left_pressed = down,
+        Keycode::Right => input_state.right_pressed = down,
+        Keycode::Space => input_state.space_pressed = down,
+        Keycode::Delete => input_state.delete_pressed = down,
+        _ => (),
     }
     None
 }
@@ -267,7 +258,7 @@ fn process_input(
     None
 }
 
-enum StateChange {
+enum GameStateChange {
     Teleport(ByteString, Coordinate<u16>),
     Restore(usize, Coordinate<u16>),
 }
@@ -370,7 +361,7 @@ fn tick_game_loop(
 
     if let Some(change) = change {
         let new_board = match change {
-            StateChange::Teleport(board, coord) => {
+            GameStateChange::Teleport(board, coord) => {
                 let id = world.boards.iter().position(|b| b.title == board);
                 if let Some(id) = id {
                     Some((id, coord))
@@ -379,13 +370,203 @@ fn tick_game_loop(
                     None
                 }
             }
-            StateChange::Restore(id, coord) => {
+            GameStateChange::Restore(id, coord) => {
                 Some((id, coord))
             }
         };
         if let Some((id, coord)) = new_board {
             *board_id = id;
             enter_board(&mut world.boards[id], coord, &mut world.all_robots);
+        }
+    }
+}
+
+enum StateChange {
+    PopCurrent,
+    Push(Box<GameState>),
+    Replace(Box<GameState>),
+}
+
+trait GameState {
+    fn init(
+        &mut self,
+        world: &mut World,
+        board_id: &mut usize
+    );
+
+    fn input(
+        &mut self,
+        event: Event,
+        input_state: &mut InputState,
+    ) -> Option<StateChange>;
+
+    fn tick(
+        &mut self,
+        world: &mut World,
+        world_path: &Path,
+        input_state: &InputState,
+        counters: &mut Counters,
+        board_id: &mut usize,
+    ) -> Option<StateChange>;
+
+    fn render(
+        &mut self,
+        world: &World,
+        board_id: usize,
+        canvas: &mut Canvas<Window>,
+    );
+}
+
+struct PlayState;
+impl GameState for PlayState {
+    fn init(&mut self, world: &mut World, board_id: &mut usize) {
+        *board_id = world.starting_board_number.0 as usize;
+        let pos = world.boards[*board_id].player_pos;
+        enter_board(&mut world.boards[*board_id], pos, &mut world.all_robots);
+        world.state.charset = world.state.initial_charset;
+        world.state.palette = world.state.initial_palette.clone();
+    }
+
+    fn input(
+        &mut self,
+        event: Event,
+        input_state: &mut InputState,
+    ) -> Option<StateChange> {
+        match event {
+            Event::KeyDown {keycode: Option::Some(Keycode::Escape), ..} =>
+                Some(StateChange::PopCurrent),
+            Event::KeyDown {timestamp, keycode, keymod, repeat, ..} => {
+                let _ = handle_key_input(
+                    input_state,
+                    timestamp,
+                    keycode,
+                    keymod,
+                    repeat,
+                    true,
+                );
+                None
+            }
+            Event::KeyUp {timestamp, keycode, keymod, repeat, ..} => {
+                let _ = handle_key_input(
+                    input_state,
+                    timestamp,
+                    keycode,
+                    keymod,
+                    repeat,
+                    false,
+                );
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn tick(
+        &mut self,
+        world: &mut World,
+        world_path: &Path,
+        input_state: &InputState,
+        counters: &mut Counters,
+        board_id: &mut usize,
+    ) -> Option<StateChange> {
+        tick_game_loop(world, world_path, input_state, counters, board_id);
+        None
+    }
+
+    fn render(
+        &mut self,
+        world: &World,
+        board_id: usize,
+        canvas: &mut Canvas<Window>,
+    ) {
+        render_game(world, board_id, canvas, false);
+    }
+}
+
+struct TitleState;
+impl GameState for TitleState {
+    fn init(&mut self, _world: &mut World, _board_id: &mut usize) {
+    }
+
+    fn input(
+        &mut self,
+        event: Event,
+        _input_state: &mut InputState,
+    ) -> Option<StateChange> {
+        match event {
+            Event::KeyDown {keycode: Some(Keycode::Escape), ..} =>
+                Some(StateChange::PopCurrent),
+            Event::KeyDown {keycode: Some(Keycode::P), ..} =>
+                Some(StateChange::Replace(Box::new(PlayState))),
+            _ => None,
+        }
+    }
+
+    fn tick(
+        &mut self,
+        world: &mut World,
+        world_path: &Path,
+        input_state: &InputState,
+        counters: &mut Counters,
+        board_id: &mut usize,
+    ) -> Option<StateChange> {
+        tick_game_loop(world, world_path, input_state, counters, board_id);
+        None
+    }
+
+    fn render(
+        &mut self,
+        world: &World,
+        board_id: usize,
+        canvas: &mut Canvas<Window>,
+    ) {
+        render_game(world, board_id, canvas, true);
+    }
+}
+
+fn render_game(
+    world: &World,
+    board_id: usize,
+    canvas: &mut Canvas<Window>,
+    is_title_screen: bool,
+) {
+    let mut renderer = SdlRenderer { canvas };
+    let robots_start = world.boards[board_id].robot_range.0;
+    let robots_end = robots_start + world.boards[board_id].robot_range.1;
+    let robots = &world.all_robots[robots_start..robots_end];
+    render(
+        &world.state,
+        (
+            world.boards[board_id].upper_left_viewport,
+            world.boards[board_id].viewport_size,
+        ),
+        world.boards[board_id].scroll_offset,
+        &world.boards[board_id],
+        robots,
+        &mut renderer,
+        is_title_screen,
+    );
+}
+
+fn update_state(
+    states: &mut Vec<Box<GameState>>,
+    change: Option<StateChange>,
+    world: &mut World,
+    board_id: &mut usize,
+) {
+    match change {
+        None => (),
+        Some(StateChange::PopCurrent) => {
+            let _ = states.pop().expect("no state to pop??");
+        }
+        Some(StateChange::Push(mut state)) => {
+            state.init(world, board_id);
+            states.push(state);
+        }
+        Some(StateChange::Replace(mut state)) => {
+            let _ = states.pop().expect("no state to replace??");
+            state.init(world, board_id);
+            states.push(state);
         }
     }
 }
@@ -427,11 +608,12 @@ fn run(world_path: &Path) {
 
     canvas.set_draw_color(Color::RGBA(255, 255, 255, 255));
 
+    let mut states = vec![Box::new(TitleState) as Box<GameState>];
+
     let mut events = sdl_context.event_pump().unwrap();
 
     let mut board_id = 0;
-    let mut is_title_screen = true;
-    let mut game_speed: u64 = 4;
+    let game_speed: u64 = 4;
 
     let mut input_state = InputState::default();
     let mut counters = Counters::new();
@@ -439,79 +621,35 @@ fn run(world_path: &Path) {
     'mainloop: loop {
         let start = time::precise_time_ns();
         for event in events.poll_iter() {
-            let change = match event {
-                Event::Quit{..} |
-                Event::KeyDown {keycode: Option::Some(Keycode::Escape), ..} =>
-                    break 'mainloop,
-                Event::KeyDown {timestamp, keycode, keymod, repeat, ..} => {
-                    handle_key_input(
-                        &mut input_state,
-                        timestamp,
-                        keycode,
-                        keymod,
-                        repeat,
-                        true,
-                        is_title_screen,
-                    )
-                }
-                Event::KeyUp {timestamp, keycode, keymod, repeat, ..} => {
-                    handle_key_input(
-                        &mut input_state,
-                        timestamp,
-                        keycode,
-                        keymod,
-                        repeat,
-                        false,
-                        is_title_screen,
-                    )
-                }
-                _ => None,
-            };
-            match change {
-                Some(GameStateChange::BeginGame) => {
-                    is_title_screen = false;
-                    board_id = world.starting_board_number.0 as usize;
-                    let pos = world.boards[board_id].player_pos;
-                    enter_board(&mut world.boards[board_id], pos, &mut world.all_robots);
-                    world.state.charset = world.state.initial_charset;
-                    world.state.palette = world.state.initial_palette.clone();
-                }
-                Some(GameStateChange::Speed(n)) => {
-                    println!("changing speed to {}", n);
-                    game_speed = n;
-                }
-                None => (),
+            if let Event::Quit{..} = event {
+                break 'mainloop;
             }
+            let change = match states.last_mut() {
+                Some(state) => state.input(event, &mut input_state),
+                None => break 'mainloop,
+            };
+            update_state(&mut states, change, &mut world, &mut board_id);
         }
 
-        tick_game_loop(
-            &mut world,
-            &world_path,
-            &input_state,
-            &mut counters,
-            &mut board_id,
-        );
+        if let Some(state) = states.last_mut() {
+            let change = state.tick(
+                &mut world,
+                &world_path,
+                &input_state,
+                &mut counters,
+                &mut board_id
+            );
+            update_state(&mut states, change, &mut world, &mut board_id);
+        }
 
-        {
-            let mut renderer = SdlRenderer {
-                canvas: &mut canvas,
-            };
-            let robots_start = world.boards[board_id].robot_range.0;
-            let robots_end = robots_start + world.boards[board_id].robot_range.1;
-            let robots = &world.all_robots[robots_start..robots_end];
-            render(
-                &world.state,
-                (
-                    world.boards[board_id].upper_left_viewport,
-                    world.boards[board_id].viewport_size,
-                ),
-                world.boards[board_id].scroll_offset,
-                &world.boards[board_id],
-                robots,
-                &mut renderer,
-                is_title_screen,
+        for state in &mut states {
+            state.render(
+                &world,
+                board_id,
+                &mut canvas,
             );
         }
+
         canvas.present();
 
         let now = time::precise_time_ns();

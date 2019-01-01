@@ -1,4 +1,4 @@
-use crate::{StateChange, reset_view};
+use crate::{GameStateChange, reset_view};
 use crate::robot::{update_robot, send_robot_to_label, BuiltInLabel, Robots, RobotId};
 use libmzx::{
     KeyPress, WorldState, Counters, Board, Robot, RunStatus, Coordinate, Explosion, ExtendedParam,
@@ -15,7 +15,7 @@ pub(crate) fn update_board(
     board: &mut Board,
     board_id: usize,
     all_robots: &mut Vec<Robot>,
-) -> Option<StateChange> {
+) -> Option<GameStateChange> {
     let mut robots = Robots::new(board, all_robots);
     robots.foreach(|robot, _| {
         robot.status = RunStatus::NotRun;
