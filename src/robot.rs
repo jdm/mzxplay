@@ -1,5 +1,5 @@
 use crate::board::put_thing;
-use crate::{
+use crate::game::{
     reset_view, GameStateChange,
 };
 use libmzx::{

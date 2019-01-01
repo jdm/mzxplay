@@ -1,4 +1,4 @@
-use crate::{GameStateChange, reset_view};
+use crate::game::{GameStateChange, reset_view};
 use crate::robot::{update_robot, send_robot_to_label, BuiltInLabel, Robots, RobotId};
 use libmzx::{
     KeyPress, WorldState, Counters, Board, Robot, RunStatus, Coordinate, Explosion, ExtendedParam,
