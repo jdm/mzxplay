@@ -1279,6 +1279,20 @@ fn run_one_command(
             board.remaining_message_cycles = 0;
         }
 
+        Command::TakeKey(ref _c, ref l) => {
+            // FIXME: actually take a key.
+            if let Some(ref l) = *l {
+                let context = CounterContext::from(
+                    board, robots.get(robot_id), state
+                );
+                let l = l.eval(counters, context);
+                let did_send = send_robot_to_label(robots.get_mut(robot_id), l);
+                if !did_send {
+                    return CommandResult::NoAdvance;
+                }
+            }
+        }
+
         Command::PutPlayerXY(ref x, ref y) => {
             let context = CounterContext::from(
                 board, robots.get(robot_id), state
