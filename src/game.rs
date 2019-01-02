@@ -347,7 +347,7 @@ fn process_input(
 pub(crate) enum GameStateChange {
     Teleport(ByteString, Coordinate<u16>),
     Restore(usize, Coordinate<u16>),
-    MessageBox(Vec<MessageBoxLine>),
+    MessageBox(Vec<MessageBoxLine>, ByteString),
 }
 
 pub(crate) fn tick_game_loop(
@@ -461,8 +461,8 @@ pub(crate) fn tick_game_loop(
                 Some((id, coord))
             }
 
-            GameStateChange::MessageBox(lines) => {
-                return Some(StateChange::Push(Box::new(MessageBoxState::new(lines))));
+            GameStateChange::MessageBox(lines, title) => {
+                return Some(StateChange::Push(Box::new(MessageBoxState::new(title, lines))));
             }
         };
         if let Some((id, coord)) = new_board {
@@ -476,13 +476,15 @@ pub(crate) fn tick_game_loop(
 
 struct MessageBoxState {
     lines: Vec<MessageBoxLine>,
+    title: ByteString,
     pos: usize,
 }
 
 impl MessageBoxState {
-    pub fn new(lines: Vec<MessageBoxLine>) -> MessageBoxState {
+    pub fn new(title: ByteString, lines: Vec<MessageBoxLine>) -> MessageBoxState {
         MessageBoxState {
             lines: lines,
+            title: title,
             pos: 0,
         }
     }
@@ -540,6 +542,6 @@ impl GameState for MessageBoxState {
         canvas: &mut Canvas<Window>,
     ) {
         let mut renderer = SdlRenderer { canvas };
-        draw_messagebox(&world.state, &self.lines, self.pos, &mut renderer);
+        draw_messagebox(&world.state, &self.title, &self.lines, self.pos, &mut renderer);
     }
 }
