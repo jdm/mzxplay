@@ -1279,18 +1279,46 @@ fn run_one_command(
             board.remaining_message_cycles = 0;
         }
 
-        Command::TakeKey(ref _c, ref l) => {
-            // FIXME: actually take a key.
-            if let Some(ref l) = *l {
-                let context = CounterContext::from(
-                    board, robots.get(robot_id), state
-                );
-                let l = l.eval(counters, context);
-                let did_send = send_robot_to_label(robots.get_mut(robot_id), l);
-                if !did_send {
-                    return CommandResult::NoAdvance;
+        Command::TakeKey(ref c, ref l) => {
+            let context = CounterContext::from(
+                board, robots.get(robot_id), state
+            );
+            let c = c.resolve(counters, context);
+            let has_key = state.keys & (1 << c.0) != 0;
+
+            match (l, has_key) {
+                (&Some(ref l), false) => {
+                    let l = l.eval(counters, context);
+                    let did_send = send_robot_to_label(robots.get_mut(robot_id), l);
+                    if !did_send {
+                        return CommandResult::NoAdvance;
+                    }
                 }
+                _ => (),
             }
+
+            state.keys &= !(1 << c.0);
+        }
+
+        Command::GiveKey(ref c, ref l) => {
+            let context = CounterContext::from(
+                board, robots.get(robot_id), state
+            );
+            let c = c.resolve(counters, context);
+            let has_key = state.keys & (1 << c.0) != 0;
+
+            match (l, has_key) {
+                (&Some(ref l), true) => {
+                    let l = l.eval(counters, context);
+                    let did_send = send_robot_to_label(robots.get_mut(robot_id), l);
+                    if !did_send {
+                        return CommandResult::NoAdvance;
+                    }
+                }
+                _ => (),
+            }
+
+            state.keys |= 1 << c.0;
         }
 
         Command::PutPlayerXY(ref x, ref y) => {
