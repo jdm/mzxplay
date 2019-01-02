@@ -3,7 +3,7 @@ use crate::board::{update_board, enter_board};
 use crate::robot::{Robots, RobotId, BuiltInLabel, EvaluatedByteString, send_robot_to_label};
 use libmzx::{
     World, Board, Thing, CardinalDirection, Coordinate, Counters, ByteString, KeyPress, WorldState,
-    render,
+    render, draw_messagebox, MessageBoxLine,
 };
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
@@ -62,8 +62,7 @@ impl GameState for TitleState {
         counters: &mut Counters,
         board_id: &mut usize,
     ) -> Option<StateChange> {
-        tick_game_loop(world, world_path, input_state, counters, board_id);
-        None
+        tick_game_loop(world, world_path, input_state, counters, board_id)
     }
 
     fn render(
@@ -128,8 +127,7 @@ impl GameState for PlayState {
         counters: &mut Counters,
         board_id: &mut usize,
     ) -> Option<StateChange> {
-        tick_game_loop(world, world_path, input_state, counters, board_id);
-        None
+        tick_game_loop(world, world_path, input_state, counters, board_id)
     }
 
     fn render(
@@ -349,6 +347,7 @@ fn process_input(
 pub(crate) enum GameStateChange {
     Teleport(ByteString, Coordinate<u16>),
     Restore(usize, Coordinate<u16>),
+    MessageBox(Vec<MessageBoxLine>),
 }
 
 pub(crate) fn tick_game_loop(
@@ -357,7 +356,7 @@ pub(crate) fn tick_game_loop(
     input_state: &InputState,
     counters: &mut Counters,
     board_id: &mut usize,
-) {
+) -> Option<StateChange> {
     let orig_player_pos = world.boards[*board_id].player_pos;
 
     let key = convert_input(input_state);
@@ -461,10 +460,86 @@ pub(crate) fn tick_game_loop(
             GameStateChange::Restore(id, coord) => {
                 Some((id, coord))
             }
+
+            GameStateChange::MessageBox(lines) => {
+                return Some(StateChange::Push(Box::new(MessageBoxState::new(lines))));
+            }
         };
         if let Some((id, coord)) = new_board {
             *board_id = id;
             enter_board(&mut world.boards[id], coord, &mut world.all_robots);
         }
+    }
+
+    None
+}
+
+struct MessageBoxState {
+    lines: Vec<MessageBoxLine>,
+    pos: usize,
+}
+
+impl MessageBoxState {
+    pub fn new(lines: Vec<MessageBoxLine>) -> MessageBoxState {
+        MessageBoxState {
+            lines: lines,
+            pos: 0,
+        }
+    }
+}
+
+impl GameState for MessageBoxState {
+    fn init(&mut self, _world: &mut World, _board_id: &mut usize) {
+    }
+
+    fn input(
+        &mut self,
+        event: Event,
+        _input_state: &mut InputState,
+    ) -> Option<StateChange> {
+        match event {
+            Event::KeyDown {keycode: Some(Keycode::Escape), ..} =>
+                return Some(StateChange::PopCurrent),
+
+            Event::KeyDown {keycode: Some(Keycode::Up), ..} => {
+                if self.pos > 0 {
+                    self.pos -= 1;
+                }
+            }
+
+            Event::KeyDown {keycode: Some(Keycode::Down), ..} => {
+                if self.pos < self.lines.len() - 1 {
+                    self.pos += 1;
+                }
+            }
+
+            Event::KeyDown {keycode: Some(Keycode::Return), ..} => {
+            }
+
+            _ => (),
+        }
+
+        None
+    }
+
+    fn tick(
+        &mut self,
+        _world: &mut World,
+        _world_path: &Path,
+        _input_state: &InputState,
+        _counters: &mut Counters,
+        _board_id: &mut usize,
+    ) -> Option<StateChange> {
+        None
+    }
+
+    fn render(
+        &mut self,
+        world: &World,
+        _board_id: usize,
+        canvas: &mut Canvas<Window>,
+    ) {
+        let mut renderer = SdlRenderer { canvas };
+        draw_messagebox(&world.state, &self.lines, self.pos, &mut renderer);
     }
 }

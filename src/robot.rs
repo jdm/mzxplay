@@ -7,7 +7,7 @@ use libmzx::{
     Resolve, adjust_coordinate, dir_to_cardinal_dir, Size, Coordinate, Explosion, ParamValue,
     ColorValue, Color as MzxColor, ByteString, CharId, CardinalDirection, dir_to_cardinal_dir_rel,
     RelativeDirBasis, ExtendedColorValue, ExtendedParam, Operator, CounterContextMut, RelativePart,
-    SignedNumeric,
+    SignedNumeric, MessageBoxLineType, MessageBoxLine,
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use std::fs::File;
@@ -294,11 +294,16 @@ impl<'a> Robots<'a> {
     }
 }
 
+enum Update {
+    Mode(Relative),
+    MessageBox(MessageBoxLine)
+}
+
 enum CommandResult {
     NoAdvance,
     Advance,
     AdvanceAndChangeState(GameStateChange),
-    IgnoreLine(Option<Relative>),
+    IgnoreLine(Option<Update>),
     EndCycle,
 }
 
@@ -1038,12 +1043,12 @@ fn run_one_command(
 
         Command::RelSelf(ref part) => {
             let mode = Relative::Coordinate(*part, robots.get(robot_id).position);
-            return CommandResult::IgnoreLine(Some(mode));
+            return CommandResult::IgnoreLine(Some(Update::Mode(mode)));
         }
 
         Command::RelPlayer(ref part) => {
             let mode = Relative::Coordinate(*part, board.player_pos);
-            return CommandResult::IgnoreLine(Some(mode));
+            return CommandResult::IgnoreLine(Some(Update::Mode(mode)));
         }
 
         Command::RelCounters(ref part) => {
@@ -1056,7 +1061,7 @@ fn run_one_command(
                 counters.get(&BuiltInCounter::Ypos.into(), context) as u16,
             );
             let mode = Relative::Coordinate(*part, coord);
-            return CommandResult::IgnoreLine(Some(mode));
+            return CommandResult::IgnoreLine(Some(Update::Mode(mode)));
         }
 
         Command::Teleport(ref b, ref x, ref y) => {
@@ -1306,6 +1311,22 @@ fn run_one_command(
             }
         }
 
+        Command::MessageBoxLine(ref s, line_type) => {
+            return CommandResult::IgnoreLine(Some(Update::MessageBox(
+                MessageBoxLine::Text(s.clone(), line_type)
+            )));
+        }
+
+        Command::MessageBoxOption(ref counter, ref label, ref text) => {
+            return CommandResult::IgnoreLine(Some(Update::MessageBox(
+                MessageBoxLine::Option {
+                    counter: counter.clone(),
+                    label: label.clone(),
+                    text: text.clone(),
+                }
+            )));
+        }
+
         ref cmd => warn!("ignoring {:?}", cmd),
     };
 
@@ -1346,6 +1367,7 @@ pub(crate) fn update_robot(
 
     let mut lines_run = 0;
     let mut mode = Relative::None;
+    let mut message_box_lines = vec![];
 
     const CYCLES: u8 = 40;
     let state_change = loop {
@@ -1364,6 +1386,11 @@ pub(crate) fn update_robot(
             break None;
         }
         let cmd = robot.program[robot.current_line as usize].clone();
+        if !message_box_lines.is_empty() && !cmd.is_message_box() {
+            // TODO: restore execution from current robot and cycle.
+            break Some(GameStateChange::MessageBox(message_box_lines));
+        }
+
         debug!("evaluating {:?} ({})", cmd, robot.current_line);
 
         lines_run += 1;
@@ -1391,8 +1418,17 @@ pub(crate) fn update_robot(
             CommandResult::IgnoreLine(new_mode) => {
                 robots.get_mut(robot_id).current_line += 1;
                 lines_run -= 1;
-                if let Some(new_mode) = new_mode {
-                    mode = new_mode;
+                match new_mode {
+                    None if !message_box_lines.is_empty() => {
+                        message_box_lines.push(
+                            MessageBoxLine::Text("".into(), MessageBoxLineType::Plain)
+                        );
+                    }
+                    None => (),
+                    Some(Update::Mode(new_mode)) => mode = new_mode,
+                    Some(Update::MessageBox(line)) => {
+                        message_box_lines.push(line);
+                    }
                 }
             }
             CommandResult::NoAdvance => {
