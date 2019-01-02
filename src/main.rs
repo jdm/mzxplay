@@ -151,10 +151,11 @@ fn run(world_path: &Path) {
     let mut board_id = 0;
     let game_speed: u64 = 4;
 
-    let mut input_state = InputState::default();
     let mut counters = Counters::new();
 
     'mainloop: loop {
+        let mut input_state = InputState::default();
+
         let start = time::precise_time_ns();
         for event in events.poll_iter() {
             if let Event::Quit{..} = event {
