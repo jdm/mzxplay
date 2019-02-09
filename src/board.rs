@@ -202,13 +202,19 @@ pub(crate) fn update_board(
     None
 }
 
-pub(crate) fn enter_board(board: &mut Board, player_pos: Coordinate<u16>, robots: &mut [Robot]) {
+pub(crate) fn enter_board(
+    state: &mut WorldState,
+    board: &mut Board,
+    player_pos: Coordinate<u16>,
+    robots: &mut [Robot]
+) {
     let old_pos = board.player_pos;
     if old_pos != player_pos {
         board.move_level_to(&old_pos, &player_pos);
     }
     board.player_pos = player_pos;
     reset_view(board);
+    state.scroll_locked = false;
 
     Robots::new(board, robots).foreach(|robot, _id| {
         send_robot_to_label(robot, BuiltInLabel::JustEntered);

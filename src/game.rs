@@ -83,7 +83,7 @@ impl GameState for PlayState {
     fn init(&mut self, world: &mut World, board_id: &mut usize) {
         *board_id = world.starting_board_number.0 as usize;
         let pos = world.boards[*board_id].player_pos;
-        enter_board(&mut world.boards[*board_id], pos, &mut world.all_robots);
+        enter_board(&mut world.state, &mut world.boards[*board_id], pos, &mut world.all_robots);
         world.state.charset = world.state.initial_charset;
         world.state.palette = world.state.initial_palette.clone();
     }
@@ -400,7 +400,7 @@ pub(crate) fn tick_game_loop(
                     CardinalDirection::West =>
                         Coordinate(board.width as u16 - 1, old_player_pos.1),
                 };
-                enter_board(board, player_pos, &mut world.all_robots);
+                enter_board(&mut world.state, board, player_pos, &mut world.all_robots);
             } else {
                 warn!("Edge of board with no exit.");
             }
@@ -410,7 +410,7 @@ pub(crate) fn tick_game_loop(
             let dest_board = &mut world.boards[dest_board_id as usize];
             let coord = dest_board.find(id, color).unwrap_or(dest_board.player_pos);
             *board_id = dest_board_id as usize;
-            enter_board(dest_board, coord, &mut world.all_robots);
+            enter_board(&mut world.state, dest_board, coord, &mut world.all_robots);
         }
 
         Some(InputResult::Collide(pos)) => {
@@ -481,7 +481,7 @@ pub(crate) fn tick_game_loop(
         };
         if let Some((id, coord)) = new_board {
             *board_id = id;
-            enter_board(&mut world.boards[id], coord, &mut world.all_robots);
+            enter_board(&mut world.state, &mut world.boards[id], coord, &mut world.all_robots);
         }
     }
 
