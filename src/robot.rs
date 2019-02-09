@@ -1354,8 +1354,10 @@ fn run_one_command(
         }
 
         Command::MessageBoxLine(ref s, line_type) => {
+            let robot = robots.get_mut(robot_id);
+            let context = CounterContext::from(board, robot, state);
             return CommandResult::IgnoreLine(Some(Update::MessageBox(
-                MessageBoxLine::Text(s.clone(), line_type)
+                MessageBoxLine::Text(s.evaluate(counters, context), line_type)
             )));
         }
 
