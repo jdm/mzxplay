@@ -327,6 +327,8 @@ fn run_one_command(
             board.remove_thing_at(&robot.position);
             robot.alive = false;
             if as_item {
+                let player_pos = board.player_pos;
+                board.move_level_to(&player_pos, &robot.position);
                 board.player_pos = robot.position;
             }
         }
