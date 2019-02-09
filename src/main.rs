@@ -8,7 +8,7 @@ extern crate rand;
 extern crate sdl2;
 extern crate time;
 
-use crate::game::{InputState, TitleState};
+use crate::game::{InputState, TitleState, PlayState};
 use libmzx::{load_world, World, Counters, Renderer};
 use sdl2::event::Event;
 use sdl2::pixels::Color;
@@ -123,7 +123,7 @@ fn update_state(
     }
 }
 
-fn run(world_path: &Path) {
+fn run(world_path: &Path, starting_board: Option<usize>) {
     let world_data = match File::open(&world_path) {
         Ok(mut file) => {
             let mut v = vec![];
@@ -160,11 +160,15 @@ fn run(world_path: &Path) {
 
     canvas.set_draw_color(Color::RGBA(255, 255, 255, 255));
 
-    let mut states = vec![Box::new(TitleState) as Box<GameState>];
+    let mut states = vec![if starting_board.is_none() {
+        Box::new(TitleState) as Box<GameState>
+    } else {
+        Box::new(PlayState) as Box<PlayState>
+    }];
 
     let mut events = sdl_context.event_pump().unwrap();
 
-    let mut board_id = 0;
+    let mut board_id = starting_board.unwrap_or(0);
     let game_speed: u64 = 4;
 
     let mut counters = Counters::new();
@@ -218,8 +222,8 @@ fn main() {
     env_logger::init();
     let args: Vec<_> = env::args().collect();
     if args.len() < 2 {
-        println!("Usage: cargo run /path/to/world.mzx")
+        println!("Usage: cargo run /path/to/world.mzx [board id]")
     } else {
-        run(Path::new(&args[1]));
+        run(Path::new(&args[1]), args.get(2).and_then(|a| a.parse().ok()));
     }
 }

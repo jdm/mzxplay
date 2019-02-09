@@ -78,7 +78,7 @@ impl GameState for TitleState {
     }
 }
 
-struct PlayState;
+pub struct PlayState;
 impl GameState for PlayState {
     fn init(&mut self, world: &mut World, board_id: &mut usize) {
         *board_id = world.starting_board_number.0 as usize;
