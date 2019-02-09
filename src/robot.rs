@@ -1346,6 +1346,7 @@ fn run_one_command(
             if let Some(new_pos) = new_pos {
                 let player_pos = board.player_pos;
                 board.move_level_to(&player_pos, &new_pos);
+                board.player_pos = new_pos;
             } else if let Some(blocked) = blocked {
                 if jump_robot_to_label(robot, blocked) {
                     return CommandResult::NoAdvance;
