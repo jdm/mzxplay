@@ -296,7 +296,7 @@ impl<'a> Robots<'a> {
 
 enum Update {
     Mode(Relative),
-    MessageBox(MessageBoxLine)
+    MessageBox(Option<MessageBoxLine>)
 }
 
 enum CommandResult {
@@ -1364,7 +1364,7 @@ fn run_one_command(
             let robot = robots.get_mut(robot_id);
             let context = CounterContext::from(board, robot, state);
             return CommandResult::IgnoreLine(Some(Update::MessageBox(
-                MessageBoxLine::Text(s.evaluate(counters, context), line_type)
+                Some(MessageBoxLine::Text(s.evaluate(counters, context), line_type))
             )));
         }
 
@@ -1376,13 +1376,13 @@ fn run_one_command(
             });
             if should_display {
                 return CommandResult::IgnoreLine(Some(Update::MessageBox(
-                    MessageBoxLine::Option {
+                    Some(MessageBoxLine::Option {
                         label: label.evaluate(counters, context),
                         text: text.evaluate(counters, context),
-                    }
+                    })
                 )));
             } else {
-                return CommandResult::IgnoreLine(None);
+                return CommandResult::IgnoreLine(Some(Update::MessageBox(None)));
             }
         }
 
@@ -1487,9 +1487,10 @@ pub(crate) fn update_robot(
                             MessageBoxLine::Text("".into(), MessageBoxLineType::Plain)
                         );
                     }
+                    Some(Update::MessageBox(None)) |
                     None => (),
                     Some(Update::Mode(new_mode)) => mode = new_mode,
-                    Some(Update::MessageBox(line)) => {
+                    Some(Update::MessageBox(Some(line))) => {
                         message_box_lines.push(line);
                     }
                 }
