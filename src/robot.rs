@@ -1362,13 +1362,21 @@ fn run_one_command(
         }
 
         Command::MessageBoxOption(ref counter, ref label, ref text) => {
-            return CommandResult::IgnoreLine(Some(Update::MessageBox(
-                MessageBoxLine::Option {
-                    counter: counter.clone(),
-                    label: label.clone(),
-                    text: text.clone(),
-                }
-            )));
+            let robot = robots.get_mut(robot_id);
+            let context = CounterContext::from(board, robot, state);
+            let should_display = counter.as_ref().map_or(true, |counter| {
+                counters.get(&counter.evaluate(counters, context), context) != 0
+            });
+            if should_display {
+                return CommandResult::IgnoreLine(Some(Update::MessageBox(
+                    MessageBoxLine::Option {
+                        label: label.evaluate(counters, context),
+                        text: text.evaluate(counters, context),
+                    }
+                )));
+            } else {
+                return CommandResult::IgnoreLine(None);
+            }
         }
 
         ref cmd => warn!("ignoring {:?}", cmd),
