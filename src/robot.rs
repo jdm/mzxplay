@@ -901,7 +901,7 @@ fn run_one_command(
             let l = l.eval(counters, context);
             let mut result = CommandResult::Advance;
             robots.foreach(|robot, id| {
-                if r.as_ref() == b"all" || robot.name == r {
+                if r == "all" || robot.name == r {
                     let did_send = send_robot_to_label(robot, l.clone());
                     if id == robot_id && did_send {
                         result = CommandResult::NoAdvance;
