@@ -1,4 +1,4 @@
-use crate::{GameState, StateChange, SdlRenderer};
+use crate::{GameState, PoppedData, StateChange, SdlRenderer};
 use crate::board::{update_board, enter_board};
 use crate::robot::{Robots, RobotId, BuiltInLabel, EvaluatedByteString, send_robot_to_label};
 use libmzx::{
@@ -40,6 +40,9 @@ impl GameState for TitleState {
     fn init(&mut self, _world: &mut World, _board_id: &mut usize) {
     }
 
+    fn popped(&mut self, _world: &mut World, _board_id: usize, _data: PoppedData) {
+    }
+
     fn input(
         &mut self,
         event: Event,
@@ -47,7 +50,7 @@ impl GameState for TitleState {
     ) -> Option<StateChange> {
         match event {
             Event::KeyDown {keycode: Some(Keycode::Escape), ..} =>
-                Some(StateChange::PopCurrent),
+                Some(StateChange::PopCurrent(None)),
             Event::KeyDown {keycode: Some(Keycode::P), ..} =>
                 Some(StateChange::Replace(Box::new(PlayState))),
             _ => None,
@@ -85,6 +88,17 @@ impl GameState for PlayState {
         world.state.palette = world.state.initial_palette.clone();
     }
 
+    fn popped(&mut self, world: &mut World, board_id: usize, data: PoppedData) {
+        match data {
+            PoppedData::MessageBox(rid, label) => {
+                let mut robots = Robots::new(&mut world.boards[board_id], &mut world.all_robots);
+                let robot = robots.get_mut(rid);
+                send_robot_to_label(robot, EvaluatedByteString::no_eval_needed(label));
+
+            }
+        }
+    }
+
     fn input(
         &mut self,
         event: Event,
@@ -92,7 +106,7 @@ impl GameState for PlayState {
     ) -> Option<StateChange> {
         match event {
             Event::KeyDown {keycode: Option::Some(Keycode::Escape), ..} =>
-                Some(StateChange::PopCurrent),
+                Some(StateChange::PopCurrent(None)),
             Event::KeyDown {timestamp, keycode, keymod, repeat, ..} => {
                 let _ = handle_key_input(
                     input_state,
@@ -347,7 +361,7 @@ fn process_input(
 pub(crate) enum GameStateChange {
     Teleport(ByteString, Coordinate<u16>),
     Restore(usize, Coordinate<u16>),
-    MessageBox(Vec<MessageBoxLine>, ByteString),
+    MessageBox(Vec<MessageBoxLine>, ByteString, Option<RobotId>),
 }
 
 pub(crate) fn tick_game_loop(
@@ -461,8 +475,8 @@ pub(crate) fn tick_game_loop(
                 Some((id, coord))
             }
 
-            GameStateChange::MessageBox(lines, title) => {
-                return Some(StateChange::Push(Box::new(MessageBoxState::new(title, lines))));
+            GameStateChange::MessageBox(lines, title, rid) => {
+                return Some(StateChange::Push(Box::new(MessageBoxState::new(title, lines, rid))));
             }
         };
         if let Some((id, coord)) = new_board {
@@ -478,20 +492,25 @@ struct MessageBoxState {
     lines: Vec<MessageBoxLine>,
     title: ByteString,
     pos: usize,
+    rid: Option<RobotId>,
 }
 
 impl MessageBoxState {
-    pub fn new(title: ByteString, lines: Vec<MessageBoxLine>) -> MessageBoxState {
+    pub fn new(title: ByteString, lines: Vec<MessageBoxLine>, rid: Option<RobotId>) -> MessageBoxState {
         MessageBoxState {
             lines: lines,
             title: title,
             pos: 0,
+            rid,
         }
     }
 }
 
 impl GameState for MessageBoxState {
     fn init(&mut self, _world: &mut World, _board_id: &mut usize) {
+    }
+
+    fn popped(&mut self, _world: &mut World, _board_id: usize, _data: PoppedData) {
     }
 
     fn input(
@@ -501,7 +520,7 @@ impl GameState for MessageBoxState {
     ) -> Option<StateChange> {
         match event {
             Event::KeyDown {keycode: Some(Keycode::Escape), ..} =>
-                return Some(StateChange::PopCurrent),
+                return Some(StateChange::PopCurrent(None)),
 
             Event::KeyDown {keycode: Some(Keycode::Up), ..} => {
                 if self.pos > 0 {
@@ -516,6 +535,14 @@ impl GameState for MessageBoxState {
             }
 
             Event::KeyDown {keycode: Some(Keycode::Return), ..} => {
+                if let Some(rid) = self.rid {
+                    if let MessageBoxLine::Option { ref label, .. } = self.lines[self.pos] {
+                        return Some(StateChange::PopCurrent(Some(
+                            PoppedData::MessageBox(rid, label.clone())
+                        )));
+                    }
+                }
+                return Some(StateChange::PopCurrent(None));
             }
 
             _ => (),

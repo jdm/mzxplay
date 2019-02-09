@@ -1440,7 +1440,11 @@ pub(crate) fn update_robot(
         let cmd = robot.program[robot.current_line as usize].clone();
         if !message_box_lines.is_empty() && !cmd.is_message_box() {
             // TODO: restore execution from current robot and cycle.
-            break Some(GameStateChange::MessageBox(message_box_lines, robot.name.clone()));
+            break Some(GameStateChange::MessageBox(
+                message_box_lines,
+                robot.name.clone(),
+                Some(robot_id),
+            ));
         }
 
         debug!("evaluating {:?} ({})", cmd, robot.current_line);

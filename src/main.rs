@@ -49,9 +49,13 @@ impl<'a> Renderer for SdlRenderer<'a> {
 }
 
 enum StateChange {
-    PopCurrent,
+    PopCurrent(Option<PoppedData>),
     Push(Box<GameState>),
     Replace(Box<GameState>),
+}
+
+enum PoppedData {
+    MessageBox(robot::RobotId, libmzx::ByteString),
 }
 
 trait GameState {
@@ -59,6 +63,13 @@ trait GameState {
         &mut self,
         world: &mut World,
         board_id: &mut usize
+    );
+
+    fn popped(
+        &mut self,
+        world: &mut World,
+        board: usize,
+        data: PoppedData,
     );
 
     fn input(
@@ -92,8 +103,13 @@ fn update_state(
 ) {
     match change {
         None => (),
-        Some(StateChange::PopCurrent) => {
+        Some(StateChange::PopCurrent(data)) => {
             let _ = states.pop().expect("no state to pop??");
+            if let Some(data) = data {
+                if let Some(ref mut current) = states.last_mut() {
+                    current.popped(world, *board_id, data);
+                }
+            }
         }
         Some(StateChange::Push(mut state)) => {
             state.init(world, board_id);
