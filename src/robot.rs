@@ -462,12 +462,9 @@ fn run_one_command(
                 board, robots.get(robot_id), state
             );
             let c = c.resolve(counters, context);
-            let r = r.resolve(counters, context) as u8;
-            let g = g.resolve(counters, context) as u8;
-            let b = b.resolve(counters, context) as u8;
-            if r > 63 || g > 63 || b > 63 {
-                warn!("bad colors: {},{},{}", r, g, b);
-            }
+            let r = (r.resolve(counters, context) as u8).min(63);
+            let g = (g.resolve(counters, context) as u8).min(63);
+            let b = (b.resolve(counters, context) as u8).min(63);
             state.palette.colors[c as usize].0 = MzxColor { r, g, b };
         }
 
