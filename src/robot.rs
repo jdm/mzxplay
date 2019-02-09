@@ -1114,8 +1114,15 @@ fn run_one_command(
 
         Command::Label(_) |
         Command::ZappedLabel(_) |
-        Command::Comment(_) |
         Command::BlankLine => return CommandResult::IgnoreLine(None),
+
+        Command::Comment(ref c) => {
+            if c.as_bytes().get(0) == Some(&b'@') {
+                let robot = robots.get_mut(robot_id);
+                robot.name = c.as_bytes()[1..].to_owned().into();
+            }
+            return CommandResult::IgnoreLine(None);
+        }
 
         Command::CopyBlock(ref src_x, ref src_y, ref w, ref h, ref dst_x, ref dst_y) |
         Command::CopyOverlayBlock(ref src_x, ref src_y, ref w, ref h, ref dst_x, ref dst_y) => {
