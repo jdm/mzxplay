@@ -1264,7 +1264,7 @@ fn run_one_command(
             let context = CounterContext::from(
                 board, robots.get(robot_id), state
             );
-            board.message_row = n.resolve(counters, context) as u8;
+            board.message_row = (n.resolve(counters, context) as u8).min(24);
         }
 
         Command::MessageLine(ref s) => {
