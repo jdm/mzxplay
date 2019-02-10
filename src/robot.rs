@@ -1,3 +1,4 @@
+use crate::audio::AudioEngine;
 use crate::board::put_thing;
 use crate::game::{
     reset_view, GameStateChange,
@@ -309,6 +310,7 @@ enum CommandResult {
 
 fn run_one_command(
     state: &mut WorldState,
+    audio: &AudioEngine,
     key: Option<KeyPress>,
     world_path: &Path,
     counters: &mut Counters,
@@ -1386,6 +1388,38 @@ fn run_one_command(
             }
         }
 
+        Command::Mod(ref m) => {
+            let robot = robots.get_mut(robot_id);
+            let context = CounterContext::from(board, robot, state);
+            let m = m.evaluate(counters, context).into_string();
+            audio.load_module(&m);
+            board.mod_file = m;
+        }
+
+        Command::ModFadeIn(ref m) => {
+            let robot = robots.get_mut(robot_id);
+            let context = CounterContext::from(board, robot, state);
+            let m = m.evaluate(counters, context).into_string();
+            audio.mod_fade_in(&m);
+            board.mod_file = m;
+        }
+
+        Command::EndMod => {
+            audio.end_module();
+        }
+
+        Command::ModFadeOut => {
+            audio.mod_fade_out();
+        }
+
+        Command::JumpModOrder(ref o) => {
+            let context = CounterContext::from(
+                board, robots.get(robot_id), state
+            );
+            let o = o.resolve(counters, context);
+            audio.set_mod_order(o as i32);
+        }
+
         ref cmd => warn!("ignoring {:?}", cmd),
     };
 
@@ -1398,6 +1432,7 @@ fn run_one_command(
 
 pub(crate) fn update_robot(
     state: &mut WorldState,
+    audio: &AudioEngine,
     key: Option<KeyPress>,
     world_path: &Path,
     counters: &mut Counters,
@@ -1461,6 +1496,7 @@ pub(crate) fn update_robot(
         let old_mode = mem::replace(&mut mode, Relative::None);
         match run_one_command(
             state,
+            audio,
             key,
             world_path,
             counters,

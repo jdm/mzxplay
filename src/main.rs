@@ -4,10 +4,12 @@ extern crate env_logger;
 extern crate libmzx;
 #[macro_use] extern crate log;
 extern crate num_traits;
+extern crate openmpt;
 extern crate rand;
 extern crate sdl2;
 extern crate time;
 
+use crate::audio::{AudioEngine, MusicCallback};
 use crate::game::{InputState, TitleState, PlayState};
 use libmzx::{load_world, World, Counters, Renderer};
 use sdl2::event::Event;
@@ -21,6 +23,7 @@ use std::path::Path;
 use std::process::exit;
 use std::time::Duration;
 
+mod audio;
 mod board;
 mod game;
 mod robot;
@@ -147,6 +150,8 @@ fn run(world_path: &Path, starting_board: Option<usize>) {
     let world_path = Path::new(&world_path).parent().unwrap();
 
     let sdl_context = sdl2::init().unwrap();
+    let audio_subsystem = sdl_context.audio().unwrap();
+
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem.window("revenge of megazeux", 640, 350)
       .position_centered()
@@ -160,15 +165,19 @@ fn run(world_path: &Path, starting_board: Option<usize>) {
 
     canvas.set_draw_color(Color::RGBA(255, 255, 255, 255));
 
+    let music = MusicCallback::new(&world_path);
+    let _device = audio::init_sdl(&audio_subsystem, music.clone());
+
     let mut states = vec![if starting_board.is_none() {
-        Box::new(TitleState) as Box<GameState>
+        Box::new(TitleState(music)) as Box<GameState>
     } else {
-        Box::new(PlayState) as Box<PlayState>
+        Box::new(PlayState(music)) as Box<PlayState>
     }];
 
     let mut events = sdl_context.event_pump().unwrap();
 
     let mut board_id = starting_board.unwrap_or(0);
+    music.load_module(&world.boards[board_id].mod_file);
     let game_speed: u64 = 4;
 
     let mut counters = Counters::new();

@@ -1,4 +1,5 @@
 use crate::{GameState, PoppedData, StateChange, SdlRenderer};
+use crate::audio::{AudioEngine, MusicCallback};
 use crate::board::{update_board, enter_board};
 use crate::robot::{Robots, RobotId, BuiltInLabel, EvaluatedByteString, send_robot_to_label};
 use libmzx::{
@@ -35,7 +36,7 @@ fn render_game(
     );
 }
 
-pub(crate) struct TitleState;
+pub(crate) struct TitleState(pub MusicCallback);
 impl GameState for TitleState {
     fn init(&mut self, _world: &mut World, _board_id: &mut usize) {
     }
@@ -52,7 +53,7 @@ impl GameState for TitleState {
             Event::KeyDown {keycode: Some(Keycode::Escape), ..} =>
                 Some(StateChange::PopCurrent(None)),
             Event::KeyDown {keycode: Some(Keycode::P), ..} =>
-                Some(StateChange::Replace(Box::new(PlayState))),
+                Some(StateChange::Replace(Box::new(PlayState(self.0.clone())))),
             _ => None,
         }
     }
@@ -65,7 +66,7 @@ impl GameState for TitleState {
         counters: &mut Counters,
         board_id: &mut usize,
     ) -> Option<StateChange> {
-        tick_game_loop(world, world_path, input_state, counters, board_id)
+        tick_game_loop(world, &self.0, world_path, input_state, counters, board_id)
     }
 
     fn render(
@@ -78,12 +79,12 @@ impl GameState for TitleState {
     }
 }
 
-pub struct PlayState;
+pub struct PlayState(pub MusicCallback);
 impl GameState for PlayState {
     fn init(&mut self, world: &mut World, board_id: &mut usize) {
         *board_id = world.starting_board_number.0 as usize;
         let pos = world.boards[*board_id].player_pos;
-        enter_board(&mut world.state, &mut world.boards[*board_id], pos, &mut world.all_robots);
+        enter_board(&mut world.state, &self.0, &mut world.boards[*board_id], pos, &mut world.all_robots);
         world.state.charset = world.state.initial_charset;
         world.state.palette = world.state.initial_palette.clone();
     }
@@ -141,7 +142,7 @@ impl GameState for PlayState {
         counters: &mut Counters,
         board_id: &mut usize,
     ) -> Option<StateChange> {
-        tick_game_loop(world, world_path, input_state, counters, board_id)
+        tick_game_loop(world, &self.0, world_path, input_state, counters, board_id)
     }
 
     fn render(
@@ -366,6 +367,7 @@ pub(crate) enum GameStateChange {
 
 pub(crate) fn tick_game_loop(
     world: &mut World,
+    audio: &AudioEngine,
     world_path: &Path,
     input_state: &InputState,
     counters: &mut Counters,
@@ -400,7 +402,7 @@ pub(crate) fn tick_game_loop(
                     CardinalDirection::West =>
                         Coordinate(board.width as u16 - 1, old_player_pos.1),
                 };
-                enter_board(&mut world.state, board, player_pos, &mut world.all_robots);
+                enter_board(&mut world.state, audio, board, player_pos, &mut world.all_robots);
             } else {
                 warn!("Edge of board with no exit.");
             }
@@ -410,7 +412,7 @@ pub(crate) fn tick_game_loop(
             let dest_board = &mut world.boards[dest_board_id as usize];
             let coord = dest_board.find(id, color).unwrap_or(dest_board.player_pos);
             *board_id = dest_board_id as usize;
-            enter_board(&mut world.state, dest_board, coord, &mut world.all_robots);
+            enter_board(&mut world.state, audio, dest_board, coord, &mut world.all_robots);
         }
 
         Some(InputResult::Collide(pos)) => {
@@ -452,6 +454,7 @@ pub(crate) fn tick_game_loop(
 
     let change = update_board(
         &mut world.state,
+        audio,
         key,
         world_path,
         counters,
@@ -481,7 +484,7 @@ pub(crate) fn tick_game_loop(
         };
         if let Some((id, coord)) = new_board {
             *board_id = id;
-            enter_board(&mut world.state, &mut world.boards[id], coord, &mut world.all_robots);
+            enter_board(&mut world.state, audio, &mut world.boards[id], coord, &mut world.all_robots);
         }
     }
 
