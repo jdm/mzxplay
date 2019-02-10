@@ -8,6 +8,7 @@ env_logger = "0.5"
 libmzx = { path = "../libmzx" }
 log = "0.4"
 num-traits = "0.2"
+openmpt = { version = "0.3", path = "../openmpt-rs" }
 rand = "0.4"
 sdl2 = "0.31"
 time = "0.1"

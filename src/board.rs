@@ -1,3 +1,4 @@
+use crate::audio::AudioEngine;
 use crate::game::{GameStateChange, reset_view};
 use crate::robot::{update_robot, send_robot_to_label, BuiltInLabel, Robots, RobotId};
 use libmzx::{
@@ -9,6 +10,7 @@ use std::path::Path;
 
 pub(crate) fn update_board(
     state: &mut WorldState,
+    audio: &AudioEngine,
     key: Option<KeyPress>,
     world_path: &Path,
     counters: &mut Counters,
@@ -23,6 +25,7 @@ pub(crate) fn update_board(
 
     let change = update_robot(
         state,
+        audio,
         key,
         world_path,
         counters,
@@ -44,6 +47,7 @@ pub(crate) fn update_board(
 
                     let change = update_robot(
                         state,
+                        audio,
                         key,
                         world_path,
                         counters,
@@ -204,10 +208,14 @@ pub(crate) fn update_board(
 
 pub(crate) fn enter_board(
     state: &mut WorldState,
+    audio: &AudioEngine,
     board: &mut Board,
     player_pos: Coordinate<u16>,
     robots: &mut [Robot]
 ) {
+    if board.mod_file != "*" {
+        audio.load_module(&board.mod_file);
+    }
     let old_pos = board.player_pos;
     if old_pos != player_pos {
         board.move_level_to(&old_pos, &player_pos);
