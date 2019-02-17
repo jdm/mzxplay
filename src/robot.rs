@@ -608,7 +608,9 @@ fn run_one_command(
                 let range = (upper - val).abs() as u32;
                 val = (rand::random::<u32>() % range) as i32 + val;
             }
+            println!("setting a counter");
             counters.set(s.clone(), context, val);
+            println!("done setting a counter");
         }
 
         Command::Dec(ref s, ref n, ref n2) => {
@@ -1453,7 +1455,7 @@ pub(crate) fn update_robot(
     }
     robot.cycle_count = 0;
 
-    debug!("executing {:?}", robot.name);
+    println!("executing {:?}", robot.name);
 
     if let Some(dir) = robot.walk {
         move_robot(robot, board, dir);

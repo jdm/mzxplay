@@ -220,6 +220,7 @@ fn run(world_path: &Path, starting_board: Option<usize>) {
             update_state(&mut states, change, &mut world, &mut board_id);
         }
 
+        println!("rendering");
         for state in &mut states {
             state.render(
                 &world,
@@ -234,6 +235,7 @@ fn run(world_path: &Path, starting_board: Option<usize>) {
         let elapsed_ms = (now - start) / 1_000_000;
         let total_ticks = (16 * (game_speed - 1)).checked_sub(elapsed_ms);
         if let Some(diff) = total_ticks {
+            println!("sleeping");
             ::std::thread::sleep(Duration::from_millis(diff));
         }
     };
