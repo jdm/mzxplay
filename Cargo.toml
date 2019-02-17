@@ -5,13 +5,13 @@ authors = ["Josh Matthews <josh@joshmatthews.net>"]
 
 [dependencies]
 env_logger = "0.5"
-libmzx = { path = "../libmzx" }
+libmzx = { git = "https://github.com/jdm/libmzx", branch = "tmp" }
 log = "0.4"
 num-traits = "0.2"
-openmpt = { version = "0.3", path = "../openmpt-rs" }
+openmpt = { git = "https://github.com/jdm/openmpt-rs", branch = "buffers" }
 rand = "0.4"
 sdl2 = "0.31"
 time = "0.1"
 
-[profile.dev]
-codegen-units = 1
+#[profile.dev]
+#codegen-units = 1

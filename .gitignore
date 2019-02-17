@@ -1,2 +1,4 @@
 /target
 **/*.rs.bk
+/static/output
+/static/*.data

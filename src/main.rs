@@ -16,15 +16,19 @@ use sdl2::event::Event;
 use sdl2::pixels::Color;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
+use std::cell::Cell;
 use std::env;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use std::process::exit;
+use std::rc::Rc;
 use std::time::Duration;
 
 mod audio;
 mod board;
+#[cfg(target_os = "emscripten")]
+pub mod emscripten;
 mod game;
 mod robot;
 
@@ -127,6 +131,7 @@ fn update_state(
 }
 
 fn run(world_path: &Path, starting_board: Option<usize>) {
+    println!("run!");
     let world_data = match File::open(&world_path) {
         Ok(mut file) => {
             let mut v = vec![];
@@ -169,9 +174,9 @@ fn run(world_path: &Path, starting_board: Option<usize>) {
     let _device = audio::init_sdl(&audio_subsystem, music.clone());
 
     let mut states = vec![if starting_board.is_none() {
-        Box::new(TitleState(music)) as Box<GameState>
+        Box::new(TitleState(music.clone())) as Box<GameState>
     } else {
-        Box::new(PlayState(music)) as Box<PlayState>
+        Box::new(PlayState(music.clone())) as Box<PlayState>
     }];
 
     let mut events = sdl_context.event_pump().unwrap();
@@ -182,17 +187,24 @@ fn run(world_path: &Path, starting_board: Option<usize>) {
 
     let mut counters = Counters::new();
 
-    'mainloop: loop {
+    let should_exit = Rc::new(Cell::new(false));
+    let should_exit2 = should_exit.clone();
+    let mut main_loop = || {
+        println!("main loop!");
         let mut input_state = InputState::default();
 
         let start = time::precise_time_ns();
         for event in events.poll_iter() {
             if let Event::Quit{..} = event {
-                break 'mainloop;
+                should_exit.set(true);
+                return;
             }
             let change = match states.last_mut() {
                 Some(state) => state.input(event, &mut input_state),
-                None => break 'mainloop,
+                None => {
+                    should_exit.set(true);
+                    return;
+                }
             };
             update_state(&mut states, change, &mut world, &mut board_id);
         }
@@ -224,15 +236,30 @@ fn run(world_path: &Path, starting_board: Option<usize>) {
         if let Some(diff) = total_ticks {
             ::std::thread::sleep(Duration::from_millis(diff));
         }
+    };
+
+    #[cfg(target_os = "emscripten")]
+    emscripten::set_main_loop_callback(|| {
+        if should_exit2.get() {
+            exit(0);
+        }
+        main_loop();
+    });
+
+    #[cfg(not(target_os = "emscripten"))]
+    while !should_exit2.get() {
+        main_loop();
     }
 }
 
 fn main() {
+    println!("main!");
     env_logger::init();
-    let args: Vec<_> = env::args().collect();
+    /*let args: Vec<_> = env::args().collect();
     if args.len() < 2 {
         println!("Usage: cargo run /path/to/world.mzx [board id]")
     } else {
         run(Path::new(&args[1]), args.get(2).and_then(|a| a.parse().ok()));
-    }
+    }*/
+    run(Path::new("btb/BERNARD.MZX"), None);
 }

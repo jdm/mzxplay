@@ -114,6 +114,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "libmzx"
 version = "0.1.0"
+source = "git+https://github.com/jdm/libmzx?branch=tmp#22566929bf75239ec6f6f9543359532f61cb445a"
 dependencies = [
  "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "enum-primitive-derive 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -145,10 +146,10 @@ name = "mzxplay"
 version = "0.1.0"
 dependencies = [
  "env_logger 0.5.13 (registry+https://github.com/rust-lang/crates.io-index)",
- "libmzx 0.1.0",
+ "libmzx 0.1.0 (git+https://github.com/jdm/libmzx?branch=tmp)",
  "log 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "num-traits 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "openmpt 0.3.1",
+ "openmpt 0.3.1 (git+https://github.com/jdm/openmpt-rs?branch=buffers)",
  "rand 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "sdl2 0.31.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "time 0.1.40 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -197,6 +198,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "openmpt"
 version = "0.3.1"
+source = "git+https://github.com/jdm/openmpt-rs?branch=buffers#3b67e5f2f71546ded992e1235b166ae5f699d0aa"
 dependencies = [
  "openmpt-sys 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -417,6 +419,7 @@ dependencies = [
 "checksum lazy_static 0.2.11 (registry+https://github.com/rust-lang/crates.io-index)" = "76f033c7ad61445c5b347c7382dd1237847eb1bce590fe50365dcb33d546be73"
 "checksum lazy_static 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "ca488b89a5657b0a2ecd45b95609b3e848cf1755da332a0da46e2b2b1cb371a7"
 "checksum libc 0.2.43 (registry+https://github.com/rust-lang/crates.io-index)" = "76e3a3ef172f1a0b9a9ff0dd1491ae5e6c948b94479a3021819ba7d860c8645d"
+"checksum libmzx 0.1.0 (git+https://github.com/jdm/libmzx?branch=tmp)" = "<none>"
 "checksum log 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)" = "d4fcce5fa49cc693c312001daf1d13411c4a5283796bac1084299ea3e567113f"
 "checksum memchr 2.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "a3b4142ab8738a78c51896f704f83c11df047ff1bda9a92a661aa6361552d93d"
 "checksum num 0.1.42 (registry+https://github.com/rust-lang/crates.io-index)" = "4703ad64153382334aa8db57c637364c322d3372e097840c72000dabdcf6156e"
@@ -424,6 +427,7 @@ dependencies = [
 "checksum num-iter 0.1.37 (registry+https://github.com/rust-lang/crates.io-index)" = "af3fdbbc3291a5464dc57b03860ec37ca6bf915ed6ee385e7c6c052c422b2124"
 "checksum num-traits 0.1.43 (registry+https://github.com/rust-lang/crates.io-index)" = "92e5113e9fd4cc14ded8e499429f396a20f98c772a47cc8622a736e1ec843c31"
 "checksum num-traits 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)" = "630de1ef5cc79d0cdd78b7e33b81f083cbfe90de0f4b2b2f07f905867c70e9fe"
+"checksum openmpt 0.3.1 (git+https://github.com/jdm/openmpt-rs?branch=buffers)" = "<none>"
 "checksum openmpt-sys 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "33b6d367e713f891a43679a62499402e871be8a4acd528a5957793d7359c4df9"
 "checksum quick-error 1.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "9274b940887ce9addde99c4eee6b5c44cc494b182b97e73dc8ffdcb3397fd3f0"
 "checksum quote 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)" = "7a6e920b65c65f10b2ae65c831a81a073a89edd28c7cce89475bff467ab4167a"
