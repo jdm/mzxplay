@@ -182,8 +182,9 @@ fn run(world_path: &Path, starting_board: Option<usize>) {
 
     let mut counters = Counters::new();
 
+    let mut last_input_state = InputState::default();
     'mainloop: loop {
-        let mut input_state = InputState::default();
+        let mut input_state = InputState::new_from(&last_input_state);
 
         let start = time::precise_time_ns();
         for event in events.poll_iter() {
@@ -224,6 +225,8 @@ fn run(world_path: &Path, starting_board: Option<usize>) {
         if let Some(diff) = total_ticks {
             ::std::thread::sleep(Duration::from_millis(diff));
         }
+
+        last_input_state = input_state;
     }
 }
 

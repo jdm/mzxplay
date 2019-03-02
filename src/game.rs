@@ -173,6 +173,20 @@ pub(crate) struct InputState {
     pressed_keycode: Option<Keycode>,
 }
 
+impl InputState {
+    pub fn new_from(state: &InputState) -> InputState {
+        InputState {
+            right_pressed: state.right_pressed,
+            left_pressed: state.left_pressed,
+            up_pressed: state.up_pressed,
+            down_pressed: state.down_pressed,
+            delete_pressed: state.delete_pressed,
+            space_pressed: state.space_pressed,
+            pressed_keycode: None,
+        }
+    }
+}
+
 pub(crate) fn reset_view(board: &mut Board) {
     let vwidth = board.viewport_size.0 as u16;
     let vheight = board.viewport_size.1 as u16;
