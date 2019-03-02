@@ -1288,14 +1288,15 @@ fn run_one_command(
         }
 
         Command::TakeKey(ref c, ref l) => {
-            let context = CounterContext::from(
-                board, robots.get(robot_id), state
-            );
-            let c = c.resolve(counters, context);
-            let has_key = state.keys & (1 << c.0) != 0;
+            let c = {
+                let context = CounterContext::from(board, robots.get(robot_id), state);
+                c.resolve(counters, context)
+            };
 
-            match (l, has_key) {
-                (&Some(ref l), false) => {
+            let took_key = state.take_key(c.0);
+            match (l, took_key) {
+                (&Some(ref l), Err(())) => {
+                    let context = CounterContext::from(board, robots.get(robot_id), state);
                     let l = l.eval(counters, context);
                     let did_send = send_robot_to_label(robots.get_mut(robot_id), l);
                     if !did_send {
@@ -1304,19 +1305,18 @@ fn run_one_command(
                 }
                 _ => (),
             }
-
-            state.keys &= !(1 << c.0);
         }
 
         Command::GiveKey(ref c, ref l) => {
-            let context = CounterContext::from(
-                board, robots.get(robot_id), state
-            );
-            let c = c.resolve(counters, context);
-            let has_key = state.keys & (1 << c.0) != 0;
+            let c = {
+                let context = CounterContext::from(board, robots.get(robot_id), state);
+                c.resolve(counters, context)
+            };
 
+            let has_key = state.give_key(c.0);
             match (l, has_key) {
-                (&Some(ref l), true) => {
+                (&Some(ref l), Err(())) => {
+                    let context = CounterContext::from(board, robots.get(robot_id), state);
                     let l = l.eval(counters, context);
                     let did_send = send_robot_to_label(robots.get_mut(robot_id), l);
                     if !did_send {
@@ -1325,8 +1325,6 @@ fn run_one_command(
                 }
                 _ => (),
             }
-
-            state.keys |= 1 << c.0;
         }
 
         Command::PutPlayerXY(ref x, ref y) => {
