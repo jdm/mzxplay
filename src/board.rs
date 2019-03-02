@@ -275,8 +275,6 @@ pub(crate) fn enter_board(
     board.player_pos = player_pos;
     reset_view(board);
     state.scroll_locked = false;
-    state.player_locked_ns = false;
-    state.player_locked_ew = false;
 
     Robots::new(board, robots).foreach(|robot, _id| {
         send_robot_to_label(robot, BuiltInLabel::JustEntered);

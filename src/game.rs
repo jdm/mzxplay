@@ -308,14 +308,14 @@ fn process_input(
     }
 
     let player_pos = board.player_pos;
-    let xdiff  = if !world_state.player_locked_ew && input_state.left_pressed {
+    let xdiff  = if !board.player_locked_ew && input_state.left_pressed {
         world_state.player_face_dir = 3;
         if player_pos.0 > 0 {
             -1i8
         } else {
             return Some(InputResult::ExitBoard(CardinalDirection::West));
         }
-    } else if !world_state.player_locked_ew && input_state.right_pressed {
+    } else if !board.player_locked_ew && input_state.right_pressed {
         world_state.player_face_dir = 2;
         if (player_pos.0 as usize) < board.width - 1 {
             1i8
@@ -326,14 +326,14 @@ fn process_input(
         0i8
     };
 
-    let ydiff  = if !world_state.player_locked_ns && xdiff == 0 && input_state.up_pressed {
+    let ydiff  = if !board.player_locked_ns && xdiff == 0 && input_state.up_pressed {
         world_state.player_face_dir = 0;
         if (player_pos.1 as usize) > 0 {
             -1
         } else {
             return Some(InputResult::ExitBoard(CardinalDirection::North));
         }
-    } else if !world_state.player_locked_ns && xdiff == 0 && input_state.down_pressed {
+    } else if !board.player_locked_ns && xdiff == 0 && input_state.down_pressed {
         world_state.player_face_dir = 1;
         if (player_pos.1 as usize) < board.height - 1 {
             1

@@ -580,21 +580,26 @@ fn run_one_command(
         }
 
         Command::LockPlayer => {
-            state.player_locked_ns = true;
-            state.player_locked_ew = true;
+            board.player_locked_ns = true;
+            board.player_locked_ew = true;
         }
 
         Command::UnlockPlayer => {
-            state.player_locked_ns = false;
-            state.player_locked_ew = false;
+            board.player_locked_ns = false;
+            board.player_locked_ew = false;
+            board.player_locked_attack = false
         }
 
         Command::LockPlayerNS => {
-            state.player_locked_ns = true;
+            board.player_locked_ns = true;
         }
 
         Command::LockPlayerEW => {
-            state.player_locked_ew = true;
+            board.player_locked_ew = true;
+        }
+
+        Command::LockPlayerAttack => {
+            board.player_locked_attack = true;
         }
 
         Command::Set(ref s, ref n, ref n2) => {
