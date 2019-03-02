@@ -4,13 +4,20 @@ use crate::board::{update_board, enter_board};
 use crate::robot::{Robots, RobotId, BuiltInLabel, EvaluatedByteString, send_robot_to_label};
 use libmzx::{
     World, Board, Thing, CardinalDirection, Coordinate, Counters, ByteString, KeyPress, WorldState,
-    render, draw_messagebox, MessageBoxLine,
+    render, draw_messagebox, MessageBoxLine, DoorStatus, door_from_param, param_from_door,
 };
+use num_traits::ToPrimitive;
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 use std::path::Path;
+
+pub const NORTH: (i8, i8) = (0, -1);
+pub const SOUTH: (i8, i8) = (0, 1);
+pub const EAST: (i8, i8) = (1, 0);
+pub const WEST: (i8, i8) = (-1, 0);
+pub const IDLE: (i8, i8) = (0, 0);
 
 fn render_game(
     world: &World,
@@ -416,15 +423,63 @@ pub(crate) fn tick_game_loop(
         }
 
         Some(InputResult::Collide(pos)) => {
-            let board = &world.boards[*board_id];
-            let (_id, _color, param) = board.level_at(&pos);
+            let board = &mut world.boards[*board_id];
+            let (_id, color, param) = *board.level_at(&pos);
             let thing = board.thing_at(&pos);
             match thing {
                 Thing::Robot | Thing::RobotPushable => {
-                    let robot_id = RobotId::from(*param);
+                    let robot_id = RobotId::from(param);
                     let mut robots = Robots::new(board, &mut world.all_robots);
                     let robot = robots.get_mut(robot_id);
                     send_robot_to_label(robot, BuiltInLabel::Touch);
+                }
+
+                Thing::Gate => {
+                    let mut unlocked = param == 0;
+                    if !unlocked {
+                        if world.state.take_key(color & 0x0F).is_ok() {
+                            board.level_at_mut(&pos).2 = 0;
+                            board.set_message_line("You unlock and open the gate.".into());
+                            unlocked = true;
+                        } else {
+                            board.set_message_line("The gate is locked!".into());
+                        }
+                    }
+                    if unlocked {
+                        let (ref mut id, _, ref mut param) = board.level_at_mut(&pos);
+                        *id = Thing::OpenGate.to_u8().unwrap();
+                        *param = 22;
+                    }
+                }
+
+                Thing::Door => {
+                    const DOOR_FIRST_MOVEMENT: &[(i8, i8)] = &[
+                        NORTH, WEST, NORTH, EAST, SOUTH, WEST, SOUTH, EAST,
+                    ];
+                    let (orientation, dir, status) = door_from_param(param);
+                    let mut unlocked = status == DoorStatus::Unlocked;
+                    if !unlocked {
+                        if world.state.take_key(color & 0x0F).is_ok() {
+                            board.level_at_mut(&pos).2 = param_from_door(orientation, dir, DoorStatus::Unlocked);
+                            board.set_message_line("You unlock and open the door.".into());
+                            unlocked = true;
+
+                        } else {
+                            board.set_message_line("The door is locked!".into());
+                        }
+                    }
+
+                    if unlocked {
+                        {
+                            let (ref mut id, _, ref mut param) = board.level_at_mut(&pos);
+                            *id = Thing::OpenDoor.to_u8().unwrap();
+                            *param = *param & 7;
+                        }
+                        let movement = DOOR_FIRST_MOVEMENT[(param & 7) as usize];
+                        // FIXME: support pushing
+                        // FIXME: check for blocked, act appropriately.
+                        board.move_level(&pos, movement.0, movement.1);
+                    }
                 }
 
                 _ => warn!("ignoring collision with {:?} at {:?}", thing, pos)

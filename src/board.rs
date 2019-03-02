@@ -1,5 +1,5 @@
 use crate::audio::AudioEngine;
-use crate::game::{GameStateChange, reset_view};
+use crate::game::{GameStateChange, reset_view, NORTH, SOUTH, EAST, WEST, IDLE};
 use crate::robot::{update_robot, send_robot_to_label, BuiltInLabel, Robots, RobotId};
 use libmzx::{
     KeyPress, WorldState, Counters, Board, Robot, RunStatus, Coordinate, Explosion, ExtendedParam,
@@ -187,6 +187,58 @@ pub(crate) fn update_board(
                                 );
                             }
                         }
+                    }
+                }
+
+                Thing::OpenGate => {
+                    let param = board.level_at(&coord).2;
+                    if param == 0 {
+                        board.level_at_mut(&coord).0 = Thing::Gate.to_u8().unwrap();
+                    } else {
+                        board.level_at_mut(&coord).2 -= 1;
+                    }
+                }
+
+                Thing::OpenDoor => {
+                    let param = board.level_at(&coord).2;
+                    let cur_wait = param & 0xE0;
+                    let stage = param & 0x1F;
+                    const OPEN_DOOR_MOVE: &[(i8, i8)] = &[
+                        WEST, NORTH, EAST, NORTH,
+                        WEST, SOUTH, EAST, SOUTH,
+                        IDLE, IDLE, IDLE, IDLE,
+                        IDLE, IDLE, IDLE, IDLE,
+                        EAST, SOUTH, WEST, SOUTH,
+                        EAST, NORTH, WEST, NORTH,
+                        SOUTH, EAST, SOUTH, WEST,
+                        NORTH, EAST, NORTH, WEST,
+                    ];
+                    const OPEN_DOOR_WAIT: &[u8] = &[
+                        32 , 32 , 32 , 32 , 32 , 32 , 32 , 32 ,
+                        224, 224, 224, 224, 224, 224, 224, 224,
+                        224, 224, 224, 224, 224, 224, 224, 224,
+                        32 , 32 , 32 , 32 , 32 , 32 , 32 , 32
+                    ];
+                    let door_wait = OPEN_DOOR_WAIT[stage as usize];
+                    let door_move = OPEN_DOOR_MOVE[stage as usize];
+
+                    // TODO: less magic numbers.
+                    if cur_wait == door_wait {
+                        if param & 0x18 == 0x18 {
+                            let (ref mut id, _, ref mut param) = board.level_at_mut(&coord);
+                            *param &= 0x07;
+                            *id = Thing::Door.to_u8().unwrap();
+                        } else {
+                            board.level_at_mut(&coord).2 = stage + 8;
+                        }
+
+                        if door_move != IDLE {
+                            // FIXME: support pushing
+                            // FIXME: check for blocked, act appropriately.
+                            board.move_level(&coord, door_move.0, door_move.1);
+                        }
+                    } else {
+                        board.level_at_mut(&coord).2 = param + 0x20;
                     }
                 }
 
