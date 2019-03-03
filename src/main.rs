@@ -126,7 +126,7 @@ fn update_state(
     }
 }
 
-fn run(world_path: &Path, starting_board: Option<usize>) {
+fn run(world_path: &Path, starting_board: Option<usize>, silent: bool) {
     let world_data = match File::open(&world_path) {
         Ok(mut file) => {
             let mut v = vec![];
@@ -165,7 +165,7 @@ fn run(world_path: &Path, starting_board: Option<usize>) {
 
     canvas.set_draw_color(Color::RGBA(255, 255, 255, 255));
 
-    let music = MusicCallback::new(&world_path);
+    let music = MusicCallback::new(&world_path, silent);
     let _device = audio::init_sdl(&audio_subsystem, music.clone());
 
     let mut states = vec![if starting_board.is_none() {
@@ -245,6 +245,7 @@ fn main() {
     if args.len() < 2 {
         println!("Usage: cargo run /path/to/world.mzx [board id]")
     } else {
-        run(Path::new(&args[1]), args.get(2).and_then(|a| a.parse().ok()));
+        let silent = env::var("SILENT").ok().map_or(false, |s| !s.is_empty());
+        run(Path::new(&args[1]), args.get(2).and_then(|a| a.parse().ok()), silent);
     }
 }

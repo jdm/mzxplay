@@ -36,15 +36,17 @@ pub struct MusicData {
     rate: i32,
     current_module: Option<(String, Module)>,
     new_position: Option<i32>,
+    silent: bool,
 }
 
 impl MusicData {
-    fn new(world_path: &Path) -> MusicData {
+    fn new(world_path: &Path, silent: bool) -> MusicData {
         MusicData {
             world_path: world_path.to_owned(),
             rate: 0,
             current_module: None,
             new_position: None,
+            silent,
         }
     }
 }
@@ -54,8 +56,8 @@ pub struct MusicCallback(Arc<Mutex<MusicData>>);
 unsafe impl Send for MusicCallback {}
 
 impl MusicCallback {
-    pub fn new(world_path: &Path) -> MusicCallback {
-        MusicCallback(Arc::new(Mutex::new(MusicData::new(world_path))))
+    pub fn new(world_path: &Path, silent: bool) -> MusicCallback {
+        MusicCallback(Arc::new(Mutex::new(MusicData::new(world_path, silent))))
     }
 }
 
@@ -96,7 +98,9 @@ impl AudioEngine for MusicCallback {
                 None
             }
         };
-        data.current_module = module_data;
+        if !data.silent {
+            data.current_module = module_data;
+        }
         data.new_position = None;
     }
 
