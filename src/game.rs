@@ -206,20 +206,32 @@ enum OldGameStateChange {
     Speed(u64),
 }
 
-fn handle_key_input(
-    input_state: &mut InputState,
-    _timestamp: u32,
-    keycode: Option<Keycode>,
-    _keymod: Mod,
-    _repeat: bool,
-    down: bool,
-) -> Option<OldGameStateChange> {
+pub(crate) fn update_key_states(input_state: &mut InputState, keycode: Option<Keycode>, down: bool) {
     if down {
         input_state.pressed_keycode = keycode;
     } else {
         input_state.pressed_keycode = None;
     }
 
+    match keycode {
+        Some(Keycode::Up) => input_state.up_pressed = down,
+        Some(Keycode::Down) => input_state.down_pressed = down,
+        Some(Keycode::Left) => input_state.left_pressed = down,
+        Some(Keycode::Right) => input_state.right_pressed = down,
+        Some(Keycode::Space) => input_state.space_pressed = down,
+        Some(Keycode::Delete) => input_state.delete_pressed = down,
+        _ => (),
+    }
+}
+
+fn handle_key_input(
+    _input_state: &mut InputState,
+    _timestamp: u32,
+    keycode: Option<Keycode>,
+    _keymod: Mod,
+    _repeat: bool,
+    _down: bool,
+) -> Option<OldGameStateChange> {
     let keycode = match keycode {
         Some(k) => k,
         None => return None,
@@ -229,15 +241,6 @@ fn handle_key_input(
         Keycode::Num2 => return Some(OldGameStateChange::Speed(2)),
         Keycode::Num3 => return Some(OldGameStateChange::Speed(3)),
         Keycode::Num4 => return Some(OldGameStateChange::Speed(4)),
-        _ => (),
-    }
-    match keycode {
-        Keycode::Up => input_state.up_pressed = down,
-        Keycode::Down => input_state.down_pressed = down,
-        Keycode::Left => input_state.left_pressed = down,
-        Keycode::Right => input_state.right_pressed = down,
-        Keycode::Space => input_state.space_pressed = down,
-        Keycode::Delete => input_state.delete_pressed = down,
         _ => (),
     }
     None

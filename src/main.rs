@@ -10,7 +10,7 @@ extern crate sdl2;
 extern crate time;
 
 use crate::audio::{AudioEngine, MusicCallback};
-use crate::game::{InputState, TitleState, PlayState};
+use crate::game::{InputState, TitleState, PlayState, update_key_states};
 use libmzx::{load_world, World, Counters, Renderer};
 use sdl2::event::Event;
 use sdl2::pixels::Color;
@@ -191,6 +191,15 @@ fn run(world_path: &Path, starting_board: Option<usize>) {
             if let Event::Quit{..} = event {
                 break 'mainloop;
             }
+
+            match event {
+                Event::KeyDown { ref keycode, .. } =>
+                    update_key_states(&mut input_state, *keycode, true),
+                Event::KeyUp { ref keycode, .. } =>
+                    update_key_states(&mut input_state, *keycode, false),
+                _ => (),
+            }
+
             let change = match states.last_mut() {
                 Some(state) => state.input(event, &mut input_state),
                 None => break 'mainloop,
