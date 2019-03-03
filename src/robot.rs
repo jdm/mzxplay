@@ -8,7 +8,7 @@ use libmzx::{
     Resolve, adjust_coordinate, dir_to_cardinal_dir, Size, Coordinate, Explosion, ParamValue,
     ColorValue, Color as MzxColor, ByteString, CharId, CardinalDirection, dir_to_cardinal_dir_rel,
     RelativeDirBasis, ExtendedColorValue, ExtendedParam, Operator, CounterContextMut, RelativePart,
-    SignedNumeric, MessageBoxLineType, MessageBoxLine,
+    SignedNumeric, MessageBoxLineType, MessageBoxLine, BulletType, bullet_param,
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use std::fs::File;
@@ -1421,6 +1421,102 @@ fn run_one_command(
             );
             let o = o.resolve(counters, context);
             audio.set_mod_order(o as i32);
+        }
+
+        Command::BulletColor(ref c) => {
+            let context = CounterContext::from(board, robots.get(robot_id), state);
+            let c = c.resolve(counters, context);
+            state.set_char_id(CharId::PlayerBulletColor, c.0);
+            state.set_char_id(CharId::EnemyBulletColor, c.0);
+            state.set_char_id(CharId::NeutralBulletColor, c.0);
+        }
+
+        Command::PlayerBulletColor(ref c) => {
+            let context = CounterContext::from(board, robots.get(robot_id), state);
+            let c = c.resolve(counters, context);
+            state.set_char_id(CharId::PlayerBulletColor, c.0);
+        }
+
+        Command::EnemyBulletColor(ref c) => {
+            let context = CounterContext::from(board, robots.get(robot_id), state);
+            let c = c.resolve(counters, context);
+            state.set_char_id(CharId::EnemyBulletColor, c.0);
+        }
+
+        Command::NeutralBulletColor(ref c) => {
+            let context = CounterContext::from(board, robots.get(robot_id), state);
+            let c = c.resolve(counters, context);
+            state.set_char_id(CharId::NeutralBulletColor, c.0);
+        }
+
+        Command::Bullet(ref c, ref dir) => {
+            let context = CounterContext::from(board, robots.get(robot_id), state);
+            let c = c.resolve(counters, context);
+            let (player_id, neutral_id, enemy_id) = match dir {
+                CardinalDirection::North =>
+                    (CharId::NPlayerBullet, CharId::NNeutralBullet, CharId::NEnemyBullet),
+                CardinalDirection::South =>
+                    (CharId::SPlayerBullet, CharId::SNeutralBullet, CharId::SEnemyBullet),
+                CardinalDirection::East =>
+                    (CharId::EPlayerBullet, CharId::ENeutralBullet, CharId::EEnemyBullet),
+                CardinalDirection::West =>
+                    (CharId::WPlayerBullet, CharId::WNeutralBullet, CharId::WEnemyBullet),
+            };
+            state.set_char_id(player_id, c);
+            state.set_char_id(neutral_id, c);
+            state.set_char_id(enemy_id, c);
+        }
+
+        Command::PlayerBullet(ref c, ref dir) => {
+            let context = CounterContext::from(board, robots.get(robot_id), state);
+            let c = c.resolve(counters, context);
+            let id = match dir {
+                CardinalDirection::North => CharId::NPlayerBullet,
+                CardinalDirection::South => CharId::SPlayerBullet,
+                CardinalDirection::East => CharId::EPlayerBullet,
+                CardinalDirection::West => CharId::WPlayerBullet,
+            };
+            state.set_char_id(id, c);
+        }
+
+        Command::NeutralBullet(ref c, ref dir) => {
+            let context = CounterContext::from(board, robots.get(robot_id), state);
+            let c = c.resolve(counters, context);
+            let id = match dir {
+                CardinalDirection::North => CharId::NNeutralBullet,
+                CardinalDirection::South => CharId::SNeutralBullet,
+                CardinalDirection::East => CharId::ENeutralBullet,
+                CardinalDirection::West => CharId::WNeutralBullet,
+            };
+            state.set_char_id(id, c);
+        }
+
+        Command::EnemyBullet(ref c, ref dir) => {
+            let context = CounterContext::from(board, robots.get(robot_id), state);
+            let c = c.resolve(counters, context);
+            let id = match dir {
+                CardinalDirection::North => CharId::NEnemyBullet,
+                CardinalDirection::South => CharId::SEnemyBullet,
+                CardinalDirection::East => CharId::EEnemyBullet,
+                CardinalDirection::West => CharId::WEnemyBullet,
+            };
+            state.set_char_id(id, c);
+        }
+
+        Command::Shoot(ref dir) => {
+            let robot = robots.get(robot_id);
+            let dir = dir_to_cardinal_dir(robot, dir);
+            if let Some(dir) = dir {
+                let bullet_pos = adjust_coordinate(robot.position, board, dir);
+                if let Some(ref bullet_pos) = bullet_pos {
+                    board.put_at(
+                        bullet_pos,
+                        Thing::Bullet.to_u8().unwrap(),
+                        0x07,
+                        bullet_param(BulletType::Neutral, dir),
+                    );
+                }
+            }
         }
 
         ref cmd => warn!("ignoring {:?}", cmd),

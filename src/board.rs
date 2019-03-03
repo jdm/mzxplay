@@ -4,6 +4,7 @@ use crate::robot::{update_robot, send_robot_to_label, BuiltInLabel, Robots, Robo
 use libmzx::{
     KeyPress, WorldState, Counters, Board, Robot, RunStatus, Coordinate, Explosion, ExtendedParam,
     ExplosionResult, adjust_coordinate, Thing, CardinalDirection, ExtendedColorValue,
+    bullet_from_param,
 };
 use num_traits::ToPrimitive;
 use std::path::Path;
@@ -239,6 +240,22 @@ pub(crate) fn update_board(
                         }
                     } else {
                         board.level_at_mut(&coord).2 = param + 0x20;
+                    }
+                }
+
+                Thing::Bullet => {
+                    let param = board.level_at(&coord).2;
+                    let (_type_, dir) = bullet_from_param(param);
+                    let new_pos = adjust_coordinate(coord, board, dir);
+                    if let Some(ref new_pos) = new_pos {
+                        // TODO: shot behaviour
+                        if board.thing_at(new_pos).is_solid() {
+                            board.remove_thing_at(&coord);
+                        } else {
+                            board.move_level_to(&coord, &new_pos);
+                        }
+                    } else {
+                        board.remove_thing_at(&coord);
                     }
                 }
 

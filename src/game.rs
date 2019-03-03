@@ -5,6 +5,7 @@ use crate::robot::{Robots, RobotId, BuiltInLabel, EvaluatedByteString, send_robo
 use libmzx::{
     World, Board, Thing, CardinalDirection, Coordinate, Counters, ByteString, KeyPress, WorldState,
     render, draw_messagebox, MessageBoxLine, DoorStatus, door_from_param, param_from_door,
+    bullet_param, BulletType, adjust_coordinate,
 };
 use num_traits::ToPrimitive;
 use sdl2::event::Event;
@@ -251,6 +252,7 @@ enum InputResult {
     Collide(Coordinate<u16>),
     Transport(u8, u8, u8),
     KeyLabel(u8),
+    Shoot(CardinalDirection),
 }
 
 fn convert_input(input_state: &InputState) -> Option<KeyPress> {
@@ -322,6 +324,21 @@ fn process_input(
 
     if let Some(key) = input_state.pressed_keycode.and_then(|k| keycode_to_key(k)) {
         return Some(InputResult::KeyLabel(key));
+    }
+
+    if !board.player_locked_attack && input_state.space_pressed {
+        if input_state.up_pressed {
+            return Some(InputResult::Shoot(CardinalDirection::North));
+        }
+        if input_state.down_pressed {
+            return Some(InputResult::Shoot(CardinalDirection::South));
+        }
+        if input_state.right_pressed {
+            return Some(InputResult::Shoot(CardinalDirection::East));
+        }
+        if input_state.left_pressed {
+            return Some(InputResult::Shoot(CardinalDirection::West));
+        }
     }
 
     let player_pos = board.player_pos;
@@ -513,6 +530,20 @@ pub(crate) fn tick_game_loop(
             robots.foreach(|robot, _id| {
                 send_robot_to_label(robot, EvaluatedByteString::no_eval_needed(label.clone()));
             });
+        }
+
+        Some(InputResult::Shoot(dir)) => {
+            // TODO: ammo
+            let board = &mut world.boards[*board_id];
+            let adjusted = adjust_coordinate(board.player_pos, board, dir);
+            if let Some(ref bullet_pos) = adjusted {
+                board.put_at(
+                    bullet_pos,
+                    Thing::Bullet.to_u8().unwrap(),
+                    0x07,
+                    bullet_param(BulletType::Player, dir),
+                );
+            }
         }
 
         None => (),
