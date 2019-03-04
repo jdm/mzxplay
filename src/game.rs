@@ -80,9 +80,12 @@ impl GameState for TitleState {
         world_path: &Path,
         input_state: &InputState,
         counters: &mut Counters,
+        boards: &[ByteString],
         board_id: &mut usize,
     ) -> Option<StateChange> {
-        tick_game_loop(world, &self.0, world_path, input_state, counters, board_id, &mut false)
+        tick_game_loop(
+            world, &self.0, world_path, input_state, counters, boards, board_id, &mut false,
+        )
     }
 
     fn render(
@@ -168,10 +171,11 @@ impl GameState for PlayState {
         world_path: &Path,
         input_state: &InputState,
         counters: &mut Counters,
+        boards: &[ByteString],
         board_id: &mut usize,
     ) -> Option<StateChange> {
         tick_game_loop(
-            world, &self.music, world_path, input_state, counters, board_id, &mut self.accept_player_input
+            world, &self.music, world_path, input_state, counters, boards, board_id, &mut self.accept_player_input
         )
     }
 
@@ -447,6 +451,7 @@ pub(crate) fn tick_game_loop(
     world_path: &Path,
     input_state: &InputState,
     counters: &mut Counters,
+    boards: &[ByteString],
     board_id: &mut usize,
     accept_player_input: &mut bool,
 ) -> Option<StateChange> {
@@ -608,6 +613,7 @@ pub(crate) fn tick_game_loop(
         key,
         world_path,
         counters,
+        boards,
         &mut world.boards[*board_id],
         *board_id,
         &mut world.all_robots,
@@ -710,6 +716,7 @@ impl GameState for MessageBoxState {
         _world_path: &Path,
         _input_state: &InputState,
         _counters: &mut Counters,
+        _boards: &[ByteString],
         _board_id: &mut usize,
     ) -> Option<StateChange> {
         None

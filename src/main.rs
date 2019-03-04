@@ -11,7 +11,7 @@ extern crate time;
 
 use crate::audio::{AudioEngine, MusicCallback};
 use crate::game::{InputState, TitleState, PlayState, update_key_states};
-use libmzx::{load_world, World, Counters, Renderer};
+use libmzx::{load_world, World, Counters, Renderer, ByteString};
 use sdl2::event::Event;
 use sdl2::pixels::Color;
 use sdl2::render::Canvas;
@@ -87,6 +87,7 @@ trait GameState {
         world_path: &Path,
         input_state: &InputState,
         counters: &mut Counters,
+        boards: &[ByteString],
         board_id: &mut usize,
     ) -> Option<StateChange>;
 
@@ -182,6 +183,7 @@ fn run(world_path: &Path, starting_board: Option<usize>, silent: bool) {
     states[0].init(&mut world, &mut board_id);
 
     let mut counters = Counters::new();
+    let boards: Vec<_> = world.boards.iter().map(|b| b.title.clone()).collect();
 
     let mut last_input_state = InputState::default();
     'mainloop: loop {
@@ -214,6 +216,7 @@ fn run(world_path: &Path, starting_board: Option<usize>, silent: bool) {
                 &world_path,
                 &input_state,
                 &mut counters,
+                &boards,
                 &mut board_id
             );
             update_state(&mut states, change, &mut world, &mut board_id);

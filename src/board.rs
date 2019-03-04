@@ -4,7 +4,7 @@ use crate::robot::{update_robot, send_robot_to_label, BuiltInLabel, Robots, Robo
 use libmzx::{
     KeyPress, WorldState, Counters, Board, Robot, RunStatus, Coordinate, Explosion, ExtendedParam,
     ExplosionResult, adjust_coordinate, Thing, CardinalDirection, ExtendedColorValue,
-    bullet_from_param,
+    bullet_from_param, ByteString,
 };
 use num_traits::ToPrimitive;
 use std::iter;
@@ -16,6 +16,7 @@ pub(crate) fn update_board(
     key: Option<KeyPress>,
     world_path: &Path,
     counters: &mut Counters,
+    boards: &[ByteString],
     board: &mut Board,
     board_id: usize,
     all_robots: &mut Vec<Robot>,
@@ -26,6 +27,7 @@ pub(crate) fn update_board(
         key,
         world_path,
         counters,
+        boards,
         board,
         board_id,
         Robots::new(board, all_robots),
@@ -52,6 +54,7 @@ pub(crate) fn update_board(
                         key,
                         world_path,
                         counters,
+                        boards,
                         board,
                         board_id,
                         robots,

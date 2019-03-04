@@ -8,7 +8,7 @@ use libmzx::{
     Resolve, adjust_coordinate, dir_to_cardinal_dir, Size, Coordinate, Explosion, ParamValue,
     ColorValue, Color as MzxColor, ByteString, CharId, CardinalDirection, dir_to_cardinal_dir_rel,
     RelativeDirBasis, ExtendedColorValue, ExtendedParam, Operator, CounterContextMut, RelativePart,
-    SignedNumeric, MessageBoxLineType, MessageBoxLine, BulletType, bullet_param,
+    SignedNumeric, MessageBoxLineType, MessageBoxLine, BulletType, bullet_param, BoardId
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use std::fs::File;
@@ -331,6 +331,7 @@ fn run_one_command(
     key: Option<KeyPress>,
     world_path: &Path,
     counters: &mut Counters,
+    boards: &[ByteString],
     board: &mut Board,
     board_id: usize,
     robots: &mut Robots,
@@ -719,6 +720,23 @@ fn run_one_command(
             };
             if result {
                 if jump_robot_to_label(robot, l) {
+                    return CommandResult::NoAdvance;
+                }
+            }
+        }
+
+        Command::IfAny(ref color, ref thing, ref param, ref label, negate) => {
+            let robot = robots.get_mut(robot_id);
+            let context = CounterContext::from(board, robot, state);
+            let label = label.eval(counters, context);
+            let color = color.resolve(counters, context);
+            let param = param.resolve(counters, context);
+            let mut result = board.find_extended(thing.to_u8().unwrap(), color, param).is_some();
+            if negate {
+                result = !result;
+            }
+            if result {
+                if jump_robot_to_label(robot, label) {
                     return CommandResult::NoAdvance;
                 }
             }
@@ -1541,6 +1559,23 @@ fn run_one_command(
             }
         }
 
+        Command::Board(ref dir, ref name) => {
+            let robot = robots.get(robot_id);
+            let context = CounterContext::from(board, robots.get(robot_id), state);
+            let name = name.as_ref().map(|n| n.eval(counters, context));
+            let dir = dir_to_cardinal_dir(robot, dir);
+            if let Some(dir) = dir {
+                let board_id = name.and_then(|n| boards.iter().position(|title| title == &*n));
+                let exit = match dir {
+                    CardinalDirection::North => &mut board.exits.0,
+                    CardinalDirection::South => &mut board.exits.1,
+                    CardinalDirection::East => &mut board.exits.2,
+                    CardinalDirection::West => &mut board.exits.3,
+                };
+                *exit = board_id.map(|id| BoardId(id as u8));
+            }
+        }
+
         ref cmd => warn!("ignoring {:?}", cmd),
     };
 
@@ -1557,6 +1592,7 @@ pub(crate) fn update_robot(
     key: Option<KeyPress>,
     world_path: &Path,
     counters: &mut Counters,
+    boards: &[ByteString],
     board: &mut Board,
     board_id: usize,
     mut robots: Robots,
@@ -1621,6 +1657,7 @@ pub(crate) fn update_robot(
             key,
             world_path,
             counters,
+            boards,
             board,
             board_id,
             &mut robots,
