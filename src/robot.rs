@@ -1,5 +1,5 @@
 use crate::audio::AudioEngine;
-use crate::board::put_thing;
+use crate::board::{put_thing, move_level_to, put_at};
 use crate::game::{
     reset_view, GameStateChange,
 };
@@ -28,7 +28,13 @@ enum Move {
     Blocked,
 }
 
-fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) -> Move {
+fn move_robot(
+    robot: &mut Robot,
+    board: &mut Board,
+    dir: CardinalDirection,
+    update_done: &mut [bool],
+    ignore_thud_and_edge: bool,
+) -> Move {
     let result = match dir {
         CardinalDirection::North => {
             if robot.position.1 == 0 {
@@ -61,18 +67,22 @@ fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) -> M
     };
     match result {
         MoveResult::Edge => {
-            if !jump_robot_to_label(robot, BuiltInLabel::Edge) {
-                jump_robot_to_label(robot, BuiltInLabel::Thud);
+            if !ignore_thud_and_edge {
+                if !jump_robot_to_label(robot, BuiltInLabel::Edge) {
+                    jump_robot_to_label(robot, BuiltInLabel::Thud);
+                }
             }
             Move::Blocked
         }
         MoveResult::Move(new_pos) => {
             let thing = board.thing_at(&new_pos);
             if thing.is_solid() {
-                jump_robot_to_label(robot, BuiltInLabel::Thud);
+                if !ignore_thud_and_edge {
+                    jump_robot_to_label(robot, BuiltInLabel::Thud);
+                }
                 Move::Blocked
             } else {
-                board.move_level_to(&robot.position, &new_pos);
+                move_level_to(board, &robot.position, &new_pos, update_done);
                 robot.position = new_pos;
                 Move::Moved
             }
@@ -80,13 +90,18 @@ fn move_robot(robot: &mut Robot, board: &mut Board, dir: CardinalDirection) -> M
     }
 }
 
-fn move_robot_to(robot: &mut Robot, board: &mut Board, pos: Coordinate<u16>) {
+fn move_robot_to(
+    robot: &mut Robot,
+    board: &mut Board,
+    pos: Coordinate<u16>,
+    update_done: &mut [bool],
+) {
     let thing = board.thing_at(&pos);
     if thing == Thing::Player {
         return;
     }
     // TODO: check if thing can move to under layer
-    board.move_level_to(&robot.position, &pos);
+    move_level_to(board, &robot.position, &pos, update_done);
     robot.position = pos;
 }
 
@@ -157,6 +172,7 @@ pub(crate) enum BuiltInLabel {
     Bombed,
     JustEntered,
     Touch,
+    Shot,
 }
 
 impl Into<EvaluatedByteString> for BuiltInLabel {
@@ -167,6 +183,7 @@ impl Into<EvaluatedByteString> for BuiltInLabel {
             BuiltInLabel::Bombed => "bombed",
             BuiltInLabel::JustEntered => "justentered",
             BuiltInLabel::Touch => "touch",
+            BuiltInLabel::Shot => "shot",
         }))
     }
 }
@@ -330,7 +347,7 @@ fn run_one_command(
             robot.alive = false;
             if as_item {
                 let player_pos = board.player_pos;
-                board.move_level_to(&player_pos, &robot.position);
+                move_level_to(board, &player_pos, &robot.position, &mut *state.update_done);
                 board.player_pos = robot.position;
             }
         }
@@ -976,7 +993,7 @@ fn run_one_command(
                     _ => None,
                 };
                 if let Some(dir) = dir {
-                    move_robot(robot, board, dir);
+                    move_robot(robot, board, dir, &mut *state.update_done, true);
                 }
                 robot.current_loc += 1;
                 return CommandResult::NoAdvance;
@@ -996,7 +1013,7 @@ fn run_one_command(
             if robot.current_loc != 0 {
                 let dir = dir_to_cardinal_dir(&robot, d);
                 if let Some(dir) = dir {
-                    move_robot(robot, board, dir);
+                    move_robot(robot, board, dir, &mut *state.update_done, true);
                 }
                 return CommandResult::NoAdvance;
             } else {
@@ -1008,7 +1025,7 @@ fn run_one_command(
             let robot = robots.get_mut(robot_id);
             let dir = dir_to_cardinal_dir(robot, d);
             if let Some(dir) = dir {
-                if move_robot(robot, board, dir) == Move::Blocked {
+                if move_robot(robot, board, dir, &mut *state.update_done, true) == Move::Blocked {
                     let context = CounterContext::from(board, robot, state);
                     let l = l.eval(counters, context);
                     if jump_robot_to_label(robot, l) {
@@ -1044,7 +1061,7 @@ fn run_one_command(
             let robot = robots.get_mut(robot_id);
             let context = CounterContext::from(board, robot, state);
             let coord = mode.resolve_xy(x, y, counters, context, RelativePart::First);
-            move_robot_to(robot, board, coord);
+            move_robot_to(robot, board, coord, &mut *state.update_done);
         }
 
         Command::RelSelf(ref part) => {
@@ -1212,7 +1229,7 @@ fn run_one_command(
                 context,
                 RelativePart::First,
             );
-            put_thing(board, color, *thing, param, pos);
+            put_thing(board, color, *thing, param, pos, &mut *state.update_done);
         }
 
         Command::PutDir(ref color, ref thing, ref param, ref dir) => {
@@ -1224,7 +1241,7 @@ fn run_one_command(
             if let Some(dir) = dir {
                 let adjusted = adjust_coordinate(robot.position, board, dir);
                 if let Some(coord) = adjusted {
-                    put_thing(board, color, *thing, param, coord);
+                    put_thing(board, color, *thing, param, coord, &mut *state.update_done);
                 }
             }
         }
@@ -1344,7 +1361,7 @@ fn run_one_command(
                 RelativePart::First,
             );
             let old_player_pos = board.player_pos;
-            board.move_level_to(&old_player_pos, &pos);
+            move_level_to(board, &old_player_pos, &pos, &mut *state.update_done);
             board.player_pos = pos;
         }
 
@@ -1356,7 +1373,7 @@ fn run_one_command(
                 .and_then(|dir| adjust_coordinate(board.player_pos, board, dir));
             if let Some(new_pos) = new_pos {
                 let player_pos = board.player_pos;
-                board.move_level_to(&player_pos, &new_pos);
+                move_level_to(board, &player_pos, &new_pos, &mut *state.update_done);
                 board.player_pos = new_pos;
             } else if let Some(blocked) = blocked {
                 if jump_robot_to_label(robot, blocked) {
@@ -1509,12 +1526,17 @@ fn run_one_command(
             if let Some(dir) = dir {
                 let bullet_pos = adjust_coordinate(robot.position, board, dir);
                 if let Some(ref bullet_pos) = bullet_pos {
-                    board.put_at(
-                        bullet_pos,
-                        Thing::Bullet.to_u8().unwrap(),
-                        0x07,
-                        bullet_param(BulletType::Neutral, dir),
-                    );
+                    // FIXME: shoot the solid thing
+                    if !board.thing_at(bullet_pos).is_solid() {
+                        put_at(
+                            board,
+                            bullet_pos,
+                            0x07,
+                            Thing::Bullet,
+                            bullet_param(BulletType::Neutral, dir),
+                            &mut *state.update_done,
+                        );
+                    }
                 }
             }
         }
@@ -1555,7 +1577,7 @@ pub(crate) fn update_robot(
     debug!("executing {:?}", robot.name);
 
     if let Some(dir) = robot.walk {
-        move_robot(robot, board, dir);
+        move_robot(robot, board, dir, &mut *state.update_done, false);
     }
 
     let mut lines_run = 0;

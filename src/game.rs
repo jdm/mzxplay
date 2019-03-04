@@ -1,6 +1,6 @@
 use crate::{GameState, PoppedData, StateChange, SdlRenderer};
 use crate::audio::{AudioEngine, MusicCallback};
-use crate::board::{update_board, enter_board};
+use crate::board::{update_board, enter_board, move_level, put_at};
 use crate::robot::{Robots, RobotId, BuiltInLabel, EvaluatedByteString, send_robot_to_label};
 use libmzx::{
     World, Board, Thing, CardinalDirection, Coordinate, Counters, ByteString, KeyPress, WorldState,
@@ -46,7 +46,15 @@ fn render_game(
 
 pub(crate) struct TitleState(pub MusicCallback);
 impl GameState for TitleState {
-    fn init(&mut self, _world: &mut World, _board_id: &mut usize) {
+    fn init(&mut self, world: &mut World, board_id: &mut usize) {
+        let player_pos = world.boards[*board_id].player_pos;
+        enter_board(
+            &mut world.state,
+            &self.0,
+            &mut world.boards[*board_id],
+            player_pos,
+            &mut world.all_robots,
+        );
     }
 
     fn popped(&mut self, _world: &mut World, _board_id: usize, _data: PoppedData) {
@@ -61,7 +69,7 @@ impl GameState for TitleState {
             Event::KeyDown {keycode: Some(Keycode::Escape), ..} =>
                 Some(StateChange::PopCurrent(None)),
             Event::KeyDown {keycode: Some(Keycode::P), ..} =>
-                Some(StateChange::Replace(Box::new(PlayState(self.0.clone())))),
+                Some(StateChange::Replace(Box::new(PlayState::new(self.0.clone())))),
             _ => None,
         }
     }
@@ -74,7 +82,7 @@ impl GameState for TitleState {
         counters: &mut Counters,
         board_id: &mut usize,
     ) -> Option<StateChange> {
-        tick_game_loop(world, &self.0, world_path, input_state, counters, board_id)
+        tick_game_loop(world, &self.0, world_path, input_state, counters, board_id, &mut false)
     }
 
     fn render(
@@ -87,12 +95,24 @@ impl GameState for TitleState {
     }
 }
 
-pub struct PlayState(pub MusicCallback);
+pub struct PlayState {
+    music: MusicCallback,
+    accept_player_input: bool,
+}
+impl PlayState {
+    pub fn new(music: MusicCallback) -> PlayState {
+        PlayState {
+            music,
+            accept_player_input: true,
+        }
+    }
+}
+
 impl GameState for PlayState {
     fn init(&mut self, world: &mut World, board_id: &mut usize) {
         *board_id = world.starting_board_number.0 as usize;
         let pos = world.boards[*board_id].player_pos;
-        enter_board(&mut world.state, &self.0, &mut world.boards[*board_id], pos, &mut world.all_robots);
+        enter_board(&mut world.state, &self.music, &mut world.boards[*board_id], pos, &mut world.all_robots);
         world.state.charset = world.state.initial_charset;
         world.state.palette = world.state.initial_palette.clone();
     }
@@ -150,7 +170,9 @@ impl GameState for PlayState {
         counters: &mut Counters,
         board_id: &mut usize,
     ) -> Option<StateChange> {
-        tick_game_loop(world, &self.0, world_path, input_state, counters, board_id)
+        tick_game_loop(
+            world, &self.music, world_path, input_state, counters, board_id, &mut self.accept_player_input
+        )
     }
 
     fn render(
@@ -213,6 +235,8 @@ pub(crate) fn update_key_states(input_state: &mut InputState, keycode: Option<Ke
     } else {
         input_state.pressed_keycode = None;
     }
+
+    //println!("{:?} {}", keycode, if down { "down" } else { "up" });
 
     match keycode {
         Some(Keycode::Up) => input_state.up_pressed = down,
@@ -319,6 +343,7 @@ fn process_input(
     board: &mut Board,
     input_state: &InputState,
     world_state: &mut WorldState,
+    allow_move_player: &mut bool,
 ) -> Option<InputResult> {
     world_state.key_pressed = input_state.pressed_keycode.map_or(0, |k| k as i32);
 
@@ -326,7 +351,13 @@ fn process_input(
         return Some(InputResult::KeyLabel(key));
     }
 
+    if !*allow_move_player {
+        *allow_move_player = true;
+        return None;
+    }
+
     if !board.player_locked_attack && input_state.space_pressed {
+        *allow_move_player = false;
         if input_state.up_pressed {
             return Some(InputResult::Shoot(CardinalDirection::North));
         }
@@ -387,9 +418,13 @@ fn process_input(
         if thing.is_solid() {
             return Some(InputResult::Collide(new_player_pos));
         }
-        board.move_level(&player_pos, xdiff, ydiff);
+        // FIXME: figure out what kind of delay makes sense for accepting player movement.
+        //*allow_move_player = false;
+        move_level(board, &player_pos, xdiff, ydiff, &mut *world_state.update_done);
         board.player_pos = new_player_pos;
 
+        // FIXME: move this to the start of the game update loop so that a frame is
+        //        rendered with the player on top of the transport.
         let under_thing = board.under_thing_at(&board.player_pos);
         if under_thing == Thing::Cave || under_thing == Thing::Stairs {
             let &(under_id, under_color, under_param) = board.under_at(&board.player_pos);
@@ -413,11 +448,17 @@ pub(crate) fn tick_game_loop(
     input_state: &InputState,
     counters: &mut Counters,
     board_id: &mut usize,
+    accept_player_input: &mut bool,
 ) -> Option<StateChange> {
     let orig_player_pos = world.boards[*board_id].player_pos;
 
     let key = convert_input(input_state);
-    let result = process_input(&mut world.boards[*board_id], &input_state, &mut world.state);
+    let result = process_input(
+        &mut world.boards[*board_id],
+        &input_state,
+        &mut world.state,
+        accept_player_input,
+    );
     match result {
         Some(InputResult::ExitBoard(dir)) => {
             let id = {
@@ -462,6 +503,7 @@ pub(crate) fn tick_game_loop(
             let thing = board.thing_at(&pos);
             match thing {
                 Thing::Robot | Thing::RobotPushable => {
+                    println!("touching robot");
                     let robot_id = RobotId::from(param);
                     let mut robots = Robots::new(board, &mut world.all_robots);
                     let robot = robots.get_mut(robot_id);
@@ -512,7 +554,7 @@ pub(crate) fn tick_game_loop(
                         let movement = DOOR_FIRST_MOVEMENT[(param & 7) as usize];
                         // FIXME: support pushing
                         // FIXME: check for blocked, act appropriately.
-                        board.move_level(&pos, movement.0, movement.1);
+                        move_level(board, &pos, movement.0, movement.1, &mut *world.state.update_done);
                     }
                 }
 
@@ -537,12 +579,17 @@ pub(crate) fn tick_game_loop(
             let board = &mut world.boards[*board_id];
             let adjusted = adjust_coordinate(board.player_pos, board, dir);
             if let Some(ref bullet_pos) = adjusted {
-                board.put_at(
-                    bullet_pos,
-                    Thing::Bullet.to_u8().unwrap(),
-                    0x07,
-                    bullet_param(BulletType::Player, dir),
-                );
+                // FIXME: shoot blocking object at initial position instead of overwriting
+                if !board.thing_at(bullet_pos).is_solid() {                
+                    put_at(
+                        board,
+                        bullet_pos,
+                        0x07,
+                        Thing::Bullet,
+                        bullet_param(BulletType::Player, dir),
+                        &mut *world.state.update_done,
+                    );
+                }
             }
         }
 

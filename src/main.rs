@@ -168,17 +168,18 @@ fn run(world_path: &Path, starting_board: Option<usize>, silent: bool) {
     let music = MusicCallback::new(&world_path, silent);
     let _device = audio::init_sdl(&audio_subsystem, music.clone());
 
-    let mut states = vec![if starting_board.is_none() {
-        Box::new(TitleState(music.clone())) as Box<GameState>
-    } else {
-        Box::new(PlayState(music.clone())) as Box<PlayState>
-    }];
-
     let mut events = sdl_context.event_pump().unwrap();
 
     let mut board_id = starting_board.unwrap_or(0);
     music.load_module(&world.boards[board_id].mod_file);
     let game_speed: u64 = 4;
+
+    let mut states = vec![if starting_board.is_none() {
+        Box::new(TitleState(music.clone())) as Box<GameState>
+    } else {
+        Box::new(PlayState::new(music.clone())) as Box<PlayState>
+    }];
+    states[0].init(&mut world, &mut board_id);
 
     let mut counters = Counters::new();
 

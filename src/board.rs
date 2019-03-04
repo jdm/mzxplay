@@ -7,6 +7,7 @@ use libmzx::{
     bullet_from_param,
 };
 use num_traits::ToPrimitive;
+use std::iter;
 use std::path::Path;
 
 pub(crate) fn update_board(
@@ -19,11 +20,6 @@ pub(crate) fn update_board(
     board_id: usize,
     all_robots: &mut Vec<Robot>,
 ) -> Option<GameStateChange> {
-    let mut robots = Robots::new(board, all_robots);
-    robots.foreach(|robot, _| {
-        robot.status = RunStatus::NotRun;
-    });
-
     let change = update_robot(
         state,
         audio,
@@ -32,7 +28,7 @@ pub(crate) fn update_board(
         counters,
         board,
         board_id,
-        robots,
+        Robots::new(board, all_robots),
         RobotId::Global,
     );
     if change.is_some() {
@@ -41,6 +37,10 @@ pub(crate) fn update_board(
 
     for y in 0..board.height {
         for x in 0..board.width {
+            if state.update_done[y * board.width + x] {
+                continue;
+            }
+
             let coord = Coordinate(x as u16, y as u16);
             match board.thing_at(&coord) {
                 Thing::Robot | Thing::RobotPushable => {
@@ -87,11 +87,13 @@ pub(crate) fn update_board(
                                 };
                                 let thing = board.thing_at(&coord);
                                 if !thing.is_solid() && thing != Thing::Explosion {
-                                    board.put_at(
+                                    put_at(
+                                        board,
                                         &coord,
-                                        Thing::Explosion.to_u8().unwrap(),
                                         0x00,
+                                        Thing::Explosion,
                                         explosion.to_param(),
+                                        &mut *state.update_done
                                     );
                                 } else if thing.is_robot() {
                                     let robot_id = RobotId::from(board.level_at(&coord).2);
@@ -108,19 +110,19 @@ pub(crate) fn update_board(
                     if explosion.stage == 3 {
                         let (thing, color) = match board.explosion_result {
                             ExplosionResult::Nothing => (
-                                Thing::Space.to_u8().unwrap(),
+                                Thing::Space,
                                 0x07,
                             ),
                             ExplosionResult::Ash => (
-                                Thing::Floor.to_u8().unwrap(),
+                                Thing::Floor,
                                 0x08,
                             ),
                             ExplosionResult::Fire => (
-                                Thing::Fire.to_u8().unwrap(),
+                                Thing::Fire,
                                 0x0C,
                             ),
                         };
-                        board.put_at(&coord, thing, color, 0x00);
+                        put_at(board, &coord, color, thing, 0x00, &mut *state.update_done);
                     } else {
                         explosion.stage += 1;
                         board.level_at_mut(&coord).2 = explosion.to_param();
@@ -140,11 +142,13 @@ pub(crate) fn update_board(
                     let rval = rand::random::<u8>();
                     if rval < 8 {
                         if rval == 1 && !board.fire_burns_forever {
-                            board.put_at(
+                            put_at(
+                                board,
                                 &coord,
-                                Thing::Floor.to_u8().unwrap(),
                                 0x08,
+                                Thing::Floor,
                                 0x00,
+                                &mut *state.update_done,
                             );
                         }
 
@@ -180,11 +184,13 @@ pub(crate) fn update_board(
                                  thing_id < Thing::Sensor.to_u8().unwrap());
 
                             if spread {
-                                board.put_at(
+                                put_at(
+                                    board,
                                     &coord,
-                                    Thing::Fire.to_u8().unwrap(),
                                     0x0C,
+                                    Thing::Fire,
                                     0x00,
+                                    &mut *state.update_done,
                                 );
                             }
                         }
@@ -236,7 +242,7 @@ pub(crate) fn update_board(
                         if door_move != IDLE {
                             // FIXME: support pushing
                             // FIXME: check for blocked, act appropriately.
-                            board.move_level(&coord, door_move.0, door_move.1);
+                            move_level(board, &coord, door_move.0, door_move.1, &mut *state.update_done);
                         }
                     } else {
                         board.level_at_mut(&coord).2 = param + 0x20;
@@ -249,10 +255,22 @@ pub(crate) fn update_board(
                     let new_pos = adjust_coordinate(coord, board, dir);
                     if let Some(ref new_pos) = new_pos {
                         // TODO: shot behaviour
-                        if board.thing_at(new_pos).is_solid() {
+                        let dest_thing = board.thing_at(new_pos);
+                        if dest_thing.is_solid() {
                             board.remove_thing_at(&coord);
+                            match dest_thing {
+                                Thing::Bullet => board.remove_thing_at(&new_pos),
+                                Thing::Robot | Thing::RobotPushable => {
+                                    let robot_id = RobotId::from(board.level_at(&new_pos).2);
+                                    let mut robots = Robots::new(board, all_robots);
+                                    let robot = robots.get_mut(robot_id);
+                                    send_robot_to_label(robot, BuiltInLabel::Shot);
+                                }
+                                // TODO: player, bombs, mines, etc.
+                                _ => (),
+                            }
                         } else {
-                            board.move_level_to(&coord, &new_pos);
+                            move_level_to(board, &coord, &new_pos, &mut *state.update_done);
                         }
                     } else {
                         board.remove_thing_at(&coord);
@@ -272,6 +290,13 @@ pub(crate) fn update_board(
         board.remaining_message_cycles -= 1;
     }
 
+    reset_update_done(board, &mut state.update_done);
+
+    let mut robots = Robots::new(board, all_robots);
+    robots.foreach(|robot, _| {
+        robot.status = RunStatus::NotRun;
+    });
+
     None
 }
 
@@ -280,22 +305,31 @@ pub(crate) fn enter_board(
     audio: &AudioEngine,
     board: &mut Board,
     player_pos: Coordinate<u16>,
-    robots: &mut [Robot]
+    robots: &mut [Robot],
 ) {
     if board.mod_file != "*" {
         audio.load_module(&board.mod_file);
     }
     let old_pos = board.player_pos;
     if old_pos != player_pos {
-        board.move_level_to(&old_pos, &player_pos);
+        move_level_to(board, &old_pos, &player_pos, &mut *state.update_done);
     }
     board.player_pos = player_pos;
     reset_view(board);
     state.scroll_locked = false;
 
+    reset_update_done(board, &mut state.update_done);
+
     Robots::new(board, robots).foreach(|robot, _id| {
         send_robot_to_label(robot, BuiltInLabel::JustEntered);
     })
+}
+
+fn reset_update_done(board: &Board, update_done: &mut Vec<bool>) {
+    update_done.clear();
+    let total_size = (board.width * board.height) as usize;
+    update_done.reserve(total_size);
+    update_done.extend(iter::repeat(false).take(total_size));
 }
 
 pub(crate) fn put_thing(
@@ -303,7 +337,8 @@ pub(crate) fn put_thing(
     color: ExtendedColorValue,
     thing: Thing,
     param: ExtendedParam,
-    pos: Coordinate<u16>
+    pos: Coordinate<u16>,
+    update_done: &mut [bool],
 ) {
     let color = match color {
         ExtendedColorValue::Known(c) =>
@@ -323,5 +358,40 @@ pub(crate) fn put_thing(
         ExtendedParam::Any => 0x00, //HACK
     };
 
+    put_at(board, &pos, color, thing, param, update_done);
+}
+
+pub(crate) fn put_at(
+    board: &mut Board,
+    pos: &Coordinate<u16>,
+    color: u8,
+    thing: Thing,
+    param: u8,
+    update_done: &mut [bool],
+) {
     board.put_at(&pos, thing.to_u8().unwrap(), color, param);
+    update_done[pos.1 as usize * board.width + pos.0 as usize] = true;
+}
+
+pub(crate) fn move_level_to(
+    board: &mut Board,
+    from: &Coordinate<u16>,
+    to: &Coordinate<u16>,
+    update_done: &mut [bool],
+) {
+    board.move_level_to(from, to);
+    update_done[to.1 as usize * board.width + to.0 as usize] = true;
+}
+
+pub(crate) fn move_level(
+    board: &mut Board,
+    pos: &Coordinate<u16>,
+    xdiff: i8,
+    ydiff: i8,
+    update_done: &mut [bool],
+) {
+    board.move_level(pos, xdiff, ydiff);
+    let x = (pos.0 as i16 + xdiff as i16) as usize;
+    let y = (pos.1 as i16 + ydiff as i16) as usize;
+    update_done[y * board.width + x] = true;
 }
