@@ -508,7 +508,6 @@ pub(crate) fn tick_game_loop(
             let thing = board.thing_at(&pos);
             match thing {
                 Thing::Robot | Thing::RobotPushable => {
-                    println!("touching robot");
                     let robot_id = RobotId::from(param);
                     let mut robots = Robots::new(board, &mut world.all_robots);
                     let robot = robots.get_mut(robot_id);
