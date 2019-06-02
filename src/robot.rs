@@ -1576,6 +1576,27 @@ fn run_one_command(
             }
         }
 
+        Command::Become(ref color, ref thing, ref param) => {
+            let robot = robots.get(robot_id);
+            let context = CounterContext::from(board, robot, state);
+            let color = match color.resolve(counters, context) {
+                ExtendedColorValue::Known(c) => c.0,
+                ExtendedColorValue::Unknown(_, _) => 0x07, //XXXjdm proper defaults
+            };
+            let param = match param.resolve(counters, context) {
+                ExtendedParam::Specific(p) => p.0,
+                ExtendedParam::Any => 0x00, //XXXjdm proper defaults
+            };
+            put_at(
+                board,
+                &robot.position,
+                color,
+                *thing,
+                param,
+                &mut *state.update_done,
+            );
+        }
+
         ref cmd => warn!("ignoring {:?}", cmd),
     };
 
