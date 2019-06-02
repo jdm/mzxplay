@@ -310,6 +310,8 @@ pub(crate) fn enter_board(
     player_pos: Coordinate<u16>,
     robots: &mut [Robot],
 ) {
+    reset_update_done(board, &mut state.update_done);
+
     if board.mod_file != "*" {
         audio.load_module(&board.mod_file);
     }
@@ -320,8 +322,6 @@ pub(crate) fn enter_board(
     board.player_pos = player_pos;
     reset_view(board);
     state.scroll_locked = false;
-
-    reset_update_done(board, &mut state.update_done);
 
     Robots::new(board, robots).foreach(|robot, _id| {
         send_robot_to_label(robot, BuiltInLabel::JustEntered);
