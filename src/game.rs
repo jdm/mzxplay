@@ -1,11 +1,11 @@
 use crate::{GameState, PoppedData, StateChange, SdlRenderer};
 use crate::audio::{AudioEngine, MusicCallback};
-use crate::board::{update_board, enter_board, move_level, put_at};
+use crate::board::{update_board, enter_board, move_level, put_at, move_level_to};
 use crate::robot::{Robots, RobotId, BuiltInLabel, EvaluatedByteString, send_robot_to_label};
 use libmzx::{
     World, Board, Thing, CardinalDirection, Coordinate, Counters, ByteString, KeyPress, WorldState,
     render, draw_messagebox, MessageBoxLine, DoorStatus, door_from_param, param_from_door,
-    bullet_param, BulletType, adjust_coordinate,
+    bullet_param, BulletType, adjust_coordinate, MessageBoxLineType,
 };
 use num_traits::ToPrimitive;
 use sdl2::event::Event;
@@ -127,6 +127,14 @@ impl GameState for PlayState {
                 let robot = robots.get_mut(rid);
                 send_robot_to_label(robot, EvaluatedByteString::no_eval_needed(label));
 
+            }
+            PoppedData::Scroll(pos) => {
+                let board = &mut world.boards[board_id];
+                board.remove_thing_at(&pos);
+                let player = board.player_pos;
+                move_level_to(board, &player, &pos, &mut *world.state.update_done);
+                board.player_pos = pos;
+                reset_view(board);
             }
         }
     }
@@ -514,6 +522,27 @@ pub(crate) fn tick_game_loop(
                     send_robot_to_label(robot, BuiltInLabel::Touch);
                 }
 
+                Thing::Scroll | Thing::Sign => {
+                    let scroll = &board.scrolls[param as usize - 1];
+                    let text = if !scroll.text.is_empty() {
+                        &scroll.text[1..]
+                    } else {
+                        &scroll.text
+                    };
+                    let lines = text
+                        .split(|&c| c == b'\n')
+                        .map(|s| MessageBoxLine::Text(s.to_owned().into(), MessageBoxLineType::Plain))
+                        .collect();
+                    let source = if thing == Thing::Scroll {
+                        MessageBoxSource::Scroll(pos)
+                    } else {
+                        MessageBoxSource::Sign
+                    };
+                    return Some(StateChange::Push(Box::new(
+                        MessageBoxState::new("Scroll".into(), lines, source)
+                    )));
+                }
+
                 Thing::Gate => {
                     let mut unlocked = param == 0;
                     if !unlocked {
@@ -634,7 +663,9 @@ pub(crate) fn tick_game_loop(
             }
 
             GameStateChange::MessageBox(lines, title, rid) => {
-                return Some(StateChange::Push(Box::new(MessageBoxState::new(title, lines, rid))));
+                return Some(StateChange::Push(Box::new(
+                    MessageBoxState::new(title, lines, MessageBoxSource::Robot(rid))
+                )));
             }
         };
         if let Some((id, coord)) = new_board {
@@ -646,20 +677,33 @@ pub(crate) fn tick_game_loop(
     None
 }
 
+enum MessageBoxSource {
+    Robot(Option<RobotId>),
+    Scroll(Coordinate<u16>),
+    Sign,
+}
+
 struct MessageBoxState {
     lines: Vec<MessageBoxLine>,
     title: ByteString,
     pos: usize,
-    rid: Option<RobotId>,
+    source: MessageBoxSource
 }
 
 impl MessageBoxState {
-    pub fn new(title: ByteString, lines: Vec<MessageBoxLine>, rid: Option<RobotId>) -> MessageBoxState {
+    pub fn new(title: ByteString, lines: Vec<MessageBoxLine>, source: MessageBoxSource) -> MessageBoxState {
         MessageBoxState {
             lines: lines,
             title: title,
             pos: 0,
-            rid,
+            source,
+        }
+    }
+
+    fn pop_state(&self) -> Option<PoppedData> {
+        match self.source {
+            MessageBoxSource::Scroll(pos) => Some(PoppedData::Scroll(pos)),
+            _ => None,
         }
     }
 }
@@ -678,7 +722,7 @@ impl GameState for MessageBoxState {
     ) -> Option<StateChange> {
         match event {
             Event::KeyDown {keycode: Some(Keycode::Escape), ..} =>
-                return Some(StateChange::PopCurrent(None)),
+                return Some(StateChange::PopCurrent(self.pop_state())),
 
             Event::KeyDown {keycode: Some(Keycode::Up), ..} => {
                 if self.pos > 0 {
@@ -693,14 +737,14 @@ impl GameState for MessageBoxState {
             }
 
             Event::KeyDown {keycode: Some(Keycode::Return), ..} => {
-                if let Some(rid) = self.rid {
+                if let MessageBoxSource::Robot(Some(rid)) = self.source {
                     if let MessageBoxLine::Option { ref label, .. } = self.lines[self.pos] {
                         return Some(StateChange::PopCurrent(Some(
                             PoppedData::MessageBox(rid, label.clone())
                         )));
                     }
                 }
-                return Some(StateChange::PopCurrent(None));
+                return Some(StateChange::PopCurrent(self.pop_state()));
             }
 
             _ => (),

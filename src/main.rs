@@ -11,7 +11,7 @@ extern crate time;
 
 use crate::audio::{AudioEngine, MusicCallback};
 use crate::game::{InputState, TitleState, PlayState, update_key_states};
-use libmzx::{load_world, World, Counters, Renderer, ByteString};
+use libmzx::{load_world, World, Counters, Renderer, ByteString, Coordinate};
 use sdl2::event::Event;
 use sdl2::pixels::Color;
 use sdl2::render::Canvas;
@@ -59,6 +59,7 @@ enum StateChange {
 
 enum PoppedData {
     MessageBox(robot::RobotId, libmzx::ByteString),
+    Scroll(Coordinate<u16>),
 }
 
 trait GameState {
