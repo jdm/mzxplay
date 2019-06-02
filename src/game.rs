@@ -438,7 +438,7 @@ fn process_input(
         // FIXME: move this to the start of the game update loop so that a frame is
         //        rendered with the player on top of the transport.
         let under_thing = board.under_thing_at(&board.player_pos);
-        if under_thing == Thing::Cave || under_thing == Thing::Stairs {
+        if under_thing.is_teleporter() {
             let &(under_id, under_color, under_param) = board.under_at(&board.player_pos);
             return Some(InputResult::Transport(under_id, under_color, under_param));
         }
