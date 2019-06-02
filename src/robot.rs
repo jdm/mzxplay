@@ -246,7 +246,7 @@ fn copy_robot(source_id: RobotId, robot_id: RobotId, robots: &mut Robots, board:
     );
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) enum RobotId {
     Board(usize),
     Global,
@@ -1628,7 +1628,12 @@ pub(crate) fn update_robot(
                 warn!("current robot not present at reported position; terminating");
                 robot.alive = false;
             } else if RobotId::from(board.level_at(&robot.position).2) != robot_id {
-                warn!("current robot does not match robot ID at reported position; terminating");
+                warn!(
+                    "current robot ({:?}) does not match robot ID {:?} at reported position ({:?}); terminating",
+                    RobotId::from(board.level_at(&robot.position).2),
+                    robot_id,
+                    robot.position
+                );
                 robot.alive = false;
             }
         }
