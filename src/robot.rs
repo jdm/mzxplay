@@ -758,6 +758,18 @@ fn run_one_command(
             }
         }
 
+        Command::IfAt(ref x, ref y, ref l) => {
+            let robot = robots.get_mut(robot_id);
+            let context = CounterContext::from(board, robot, state);
+            let pos = mode.resolve_xy(x, y, counters, context, RelativePart::First);
+            let l = l.eval(counters, context);
+            if robot.position == pos {
+                if jump_robot_to_label(robot, l) {
+                    return CommandResult::NoAdvance;
+                }
+            }
+        }
+
         Command::IfThingXY(ref color, ref thing, ref param, ref x, ref y, ref l) => {
             let robot = robots.get_mut(robot_id);
             let context = CounterContext::from(board, robot, state);
