@@ -69,7 +69,7 @@ impl GameState for TitleState {
             Event::KeyDown {keycode: Some(Keycode::Escape), ..} =>
                 Some(StateChange::PopCurrent(None)),
             Event::KeyDown {keycode: Some(Keycode::P), ..} =>
-                Some(StateChange::Replace(Box::new(PlayState::new(self.0.clone())))),
+                Some(StateChange::Replace(Box::new(PlayState::new(self.0.clone(), None)))),
             _ => None,
         }
     }
@@ -101,11 +101,13 @@ impl GameState for TitleState {
 pub struct PlayState {
     music: MusicCallback,
     accept_player_input: bool,
+    starting_board: Option<usize>,
 }
 impl PlayState {
-    pub fn new(music: MusicCallback) -> PlayState {
+    pub fn new(music: MusicCallback, starting_board: Option<usize>) -> PlayState {
         PlayState {
             music,
+            starting_board,
             accept_player_input: true,
         }
     }
@@ -113,7 +115,7 @@ impl PlayState {
 
 impl GameState for PlayState {
     fn init(&mut self, world: &mut World, board_id: &mut usize) {
-        *board_id = world.starting_board_number.0 as usize;
+        *board_id = self.starting_board.unwrap_or(world.starting_board_number.0 as usize);
         let pos = world.boards[*board_id].player_pos;
         enter_board(&mut world.state, &self.music, &mut world.boards[*board_id], pos, &mut world.all_robots);
         world.state.charset = world.state.initial_charset;

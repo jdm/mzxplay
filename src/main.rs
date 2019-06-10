@@ -9,7 +9,7 @@ extern crate rand;
 extern crate sdl2;
 extern crate time;
 
-use crate::audio::{AudioEngine, MusicCallback};
+use crate::audio::MusicCallback;
 use crate::game::{InputState, TitleState, PlayState, update_key_states};
 use libmzx::{load_world, World, Counters, Renderer, ByteString, Coordinate};
 use sdl2::event::Event;
@@ -172,15 +172,15 @@ fn run(world_path: &Path, starting_board: Option<usize>, silent: bool) {
 
     let mut events = sdl_context.event_pump().unwrap();
 
-    let mut board_id = starting_board.unwrap_or(0);
-    music.load_module(&world.boards[board_id].mod_file);
     let game_speed: u64 = 4;
 
     let mut states = vec![if starting_board.is_none() {
         Box::new(TitleState(music.clone())) as Box<GameState>
     } else {
-        Box::new(PlayState::new(music.clone())) as Box<PlayState>
+        Box::new(PlayState::new(music.clone(), starting_board)) as Box<PlayState>
     }];
+
+    let mut board_id = 0;
     states[0].init(&mut world, &mut board_id);
 
     let mut counters = Counters::new();
