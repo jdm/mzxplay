@@ -776,6 +776,33 @@ fn run_one_command(
             }
         }
 
+        Command::IfThingDir(ref color, ref thing, ref param, ref dir, ref label, not) => {
+            let robot = robots.get_mut(robot_id);
+            let context = CounterContext::from(board, robot, state);
+            let color = color.resolve(counters, context);
+            let param = param.resolve(counters, context);
+            let l = label.eval(counters, context);
+            let pos = match dir_to_cardinal_dir(robot, dir) {
+                Some(dir) => adjust_coordinate(robot.position, board, dir),
+                None => Some(robot.position),
+            };
+            if let Some(pos) = pos {
+                let &(board_thing, board_color, board_param) = board.level_at(&pos);
+                //XXXjdm thing comparisons need to account for whirlpools
+                let mut success = board_thing == thing.to_u8().unwrap() &&
+                    color.matches(ColorValue(board_color)) &&
+                    param.matches(ParamValue(board_param));
+                if not {
+                    success = !success;
+                }
+                if success {
+                    if jump_robot_to_label(robot, l) {
+                        return CommandResult::NoAdvance;
+                    }
+                }
+            }
+        }
+
         Command::IfPlayerXY(ref x, ref y, ref l) => {
             let robot = robots.get_mut(robot_id);
             let context = CounterContext::from(board, robot, state);
