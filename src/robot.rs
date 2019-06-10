@@ -76,16 +76,23 @@ fn move_robot(
         }
         MoveResult::Move(new_pos) => {
             let thing = board.thing_at(&new_pos);
-            if thing.is_solid() {
+            if thing.is_pushable() {
+                let adjusted = adjust_coordinate(new_pos, board, dir);
+                if let Some(pushed_pos) = adjusted {
+                    move_level_to(board, &new_pos, &pushed_pos, update_done);
+                } else {
+                    return Move::Blocked;
+                }
+            } else if thing.is_solid() {
                 if !ignore_thud_and_edge {
                     jump_robot_to_label(robot, BuiltInLabel::Thud);
                 }
-                Move::Blocked
-            } else {
-                move_level_to(board, &robot.position, &new_pos, update_done);
-                robot.position = new_pos;
-                Move::Moved
+                return Move::Blocked;
             }
+
+            move_level_to(board, &robot.position, &new_pos, update_done);
+            robot.position = new_pos;
+            Move::Moved
         }
     }
 }
