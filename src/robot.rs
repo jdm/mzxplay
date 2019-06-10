@@ -629,7 +629,7 @@ fn run_one_command(
             if let Some(ref n2) = *n2 {
                 let upper = n2.resolve(counters, context.as_immutable());
                 let range = (upper - val).abs() as u32;
-                val = (rand::random::<u32>() % range) as i32 + val;
+                val += rand::random::<u32>().checked_rem(range).unwrap_or(0) as i32;
             }
             counters.set(s.clone(), context, val);
         }
@@ -643,7 +643,7 @@ fn run_one_command(
             if let Some(ref n2) = *n2 {
                 let upper = n2.resolve(counters, context);
                 let range = (upper - val).abs() as u32;
-                val = (rand::random::<u32>() % range) as i32 + val;
+                val += rand::random::<u32>().checked_rem(range).unwrap_or(0) as i32;
             }
             let context = CounterContextMut::from(
                 board, robots.get_mut(robot_id), state
@@ -660,7 +660,7 @@ fn run_one_command(
             if let Some(ref n2) = *n2 {
                 let upper = n2.resolve(counters, context);
                 let range = (upper - val).abs() as u32;
-                val = (rand::random::<u32>() % range) as i32 + val;
+                val += rand::random::<u32>().checked_rem(range).unwrap_or(0) as i32;
             }
             let context = CounterContextMut::from(
                 board, robots.get_mut(robot_id), state
@@ -689,7 +689,7 @@ fn run_one_command(
             let context = CounterContextMut::from(
                 board, robots.get_mut(robot_id), state
             );
-            counters.set(s.clone(), context, initial / val);
+            counters.set(s.clone(), context, initial.checked_div(val).unwrap_or(initial));
         }
 
         Command::Modulo(ref s, ref n) => {
@@ -701,7 +701,7 @@ fn run_one_command(
             let context = CounterContextMut::from(
                 board, robots.get_mut(robot_id), state
             );
-            counters.set(s.clone(), context, initial % val);
+            counters.set(s.clone(), context, initial.checked_rem(val).unwrap_or(initial));
         }
 
         Command::If(ref s, op, ref n, ref l) => {
