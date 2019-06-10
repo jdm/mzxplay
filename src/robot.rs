@@ -8,7 +8,7 @@ use libmzx::{
     Resolve, adjust_coordinate, dir_to_cardinal_dir, Size, Coordinate, Explosion, ParamValue,
     ColorValue, Color as MzxColor, ByteString, CharId, CardinalDirection, dir_to_cardinal_dir_rel,
     RelativeDirBasis, ExtendedColorValue, ExtendedParam, Operator, CounterContextMut, RelativePart,
-    SignedNumeric, MessageBoxLineType, MessageBoxLine, BulletType, bullet_param, BoardId
+    SignedNumeric, MessageBoxLineType, MessageBoxLine, BulletType, bullet_param, BoardId, Direction
 };
 use num_traits::{FromPrimitive, ToPrimitive};
 use std::fs::File;
@@ -776,18 +776,34 @@ fn run_one_command(
             }
         }
 
-        Command::IfThingDir(ref color, ref thing, ref param, ref dir, ref label, not) => {
+        Command::IfThingDir(ref color, ref thing, ref param, ref dir, ref label, _) |
+        Command::IfDirOfPlayer(ref dir, ref color, ref thing, ref param, ref label) => {
             let robot = robots.get_mut(robot_id);
             let context = CounterContext::from(board, robot, state);
             let color = color.resolve(counters, context);
             let param = param.resolve(counters, context);
             let l = label.eval(counters, context);
-            let pos = match dir_to_cardinal_dir(robot, dir) {
-                Some(dir) => adjust_coordinate(robot.position, board, dir),
-                None => Some(robot.position),
+            let (not, base_pos) = if let Command::IfThingDir(_, _, _, _, _, not) = cmd {
+                (*not, robot.position)
+            } else {
+                (false, board.player_pos)
+            };
+            enum Source {
+                Level,
+                Under,
+            }
+            let (source, pos) = match dir_to_cardinal_dir(robot, dir) {
+                Some(dir) => (Source::Level, adjust_coordinate(base_pos, board, dir)),
+                None => match dir.dir {
+                    Direction::Beneath => (Source::Under, Some(base_pos)),
+                    _ => (Source::Level, None),
+                }
             };
             if let Some(pos) = pos {
-                let &(board_thing, board_color, board_param) = board.level_at(&pos);
+                let &(board_thing, board_color, board_param) = match source {
+                    Source::Level => board.level_at(&pos),
+                    Source::Under => board.under_at(&pos),
+                };
                 //XXXjdm thing comparisons need to account for whirlpools
                 let mut success = board_thing == thing.to_u8().unwrap() &&
                     color.matches(ColorValue(board_color)) &&
