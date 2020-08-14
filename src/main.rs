@@ -24,7 +24,7 @@ use std::process::exit;
 use std::time::Duration;
 
 mod audio;
-mod board;
+//mod board;
 mod game;
 //mod robot;
 

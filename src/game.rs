@@ -1,8 +1,7 @@
 use crate::{GameState, PoppedData, StateChange, SdlRenderer};
 use crate::audio::MusicCallback;
 use libmzx::audio::AudioEngine;
-use libmzx::board::update_board;
-use crate::board::enter_board;
+use libmzx::board::{enter_board, update_board};
 use libmzx::robot::{Robots, RobotId, BuiltInLabel, EvaluatedByteString, send_robot_to_label};
 use libmzx::{
     World, Board, Thing, CardinalDirection, Coordinate, Counters, ByteString, KeyPress, WorldState,
