@@ -1,24 +1,21 @@
 use crate::{GameState, PoppedData, StateChange, SdlRenderer};
-use crate::audio::{AudioEngine, MusicCallback};
-use crate::board::{update_board, enter_board, move_level, put_at, move_level_to};
-use crate::robot::{Robots, RobotId, BuiltInLabel, EvaluatedByteString, send_robot_to_label};
+use crate::audio::MusicCallback;
+use libmzx::audio::AudioEngine;
+use libmzx::board::update_board;
+use crate::board::enter_board;
+use libmzx::robot::{Robots, RobotId, BuiltInLabel, EvaluatedByteString, send_robot_to_label};
 use libmzx::{
     World, Board, Thing, CardinalDirection, Coordinate, Counters, ByteString, KeyPress, WorldState,
     render, draw_messagebox, MessageBoxLine, DoorStatus, door_from_param, param_from_door,
-    bullet_param, BulletType, adjust_coordinate, MessageBoxLineType,
+    bullet_param, BulletType, adjust_coordinate, MessageBoxLineType, Robot, adjust_coordinate_diff,
 };
+use libmzx::board::{NORTH, SOUTH, EAST, WEST, GameStateChange, move_level, put_at, move_level_to, reset_view};
 use num_traits::ToPrimitive;
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 use std::path::Path;
-
-pub const NORTH: (i8, i8) = (0, -1);
-pub const SOUTH: (i8, i8) = (0, 1);
-pub const EAST: (i8, i8) = (1, 0);
-pub const WEST: (i8, i8) = (-1, 0);
-pub const IDLE: (i8, i8) = (0, 0);
 
 fn render_game(
     world: &World,
@@ -134,7 +131,7 @@ impl GameState for PlayState {
                 let board = &mut world.boards[board_id];
                 board.remove_thing_at(&pos);
                 let player = board.player_pos;
-                move_level_to(board, &player, &pos, &mut *world.state.update_done);
+                move_level_to(board, &mut world.all_robots, &player, &pos, &mut *world.state.update_done);
                 board.player_pos = pos;
                 reset_view(board);
             }
@@ -222,21 +219,6 @@ impl InputState {
             pressed_keycode: None,
         }
     }
-}
-
-pub(crate) fn reset_view(board: &mut Board) {
-    let vwidth = board.viewport_size.0 as u16;
-    let vheight = board.viewport_size.1 as u16;
-
-    let xpos = (board.player_pos.0.checked_sub(vwidth / 2))
-        .unwrap_or(0)
-        .min(board.width as u16 - vwidth);
-
-    let ypos = (board.player_pos.1.checked_sub(vheight / 2))
-        .unwrap_or(0)
-        .min(board.height as u16 - vheight);
-
-    board.scroll_offset = Coordinate(xpos, ypos);
 }
 
 enum OldGameStateChange {
@@ -355,6 +337,7 @@ fn keycode_to_key(keycode: Keycode) -> Option<u8> {
 
 fn process_input(
     board: &mut Board,
+    robots: &mut [Robot],
     input_state: &InputState,
     world_state: &mut WorldState,
     allow_move_player: &mut bool,
@@ -429,12 +412,18 @@ fn process_input(
     );
     if new_player_pos != player_pos {
         let thing = board.thing_at(&new_player_pos);
-        if thing.is_solid() {
+        if thing.is_pushable() {
+            if let Some(pushed_pos) = adjust_coordinate_diff(new_player_pos, board, xdiff as i16, ydiff as i16) {
+                move_level_to(board, robots, &new_player_pos, &pushed_pos, &mut *world_state.update_done);
+            } else {
+                return Some(InputResult::Collide(new_player_pos));
+            }
+        } else if thing.is_solid() {
             return Some(InputResult::Collide(new_player_pos));
         }
         // FIXME: figure out what kind of delay makes sense for accepting player movement.
         //*allow_move_player = false;
-        move_level(board, &player_pos, xdiff, ydiff, &mut *world_state.update_done);
+        move_level(board, robots, &player_pos, xdiff, ydiff, &mut *world_state.update_done);
         board.player_pos = new_player_pos;
 
         // FIXME: move this to the start of the game update loop so that a frame is
@@ -449,15 +438,9 @@ fn process_input(
     None
 }
 
-pub(crate) enum GameStateChange {
-    Teleport(ByteString, Coordinate<u16>),
-    Restore(usize, Coordinate<u16>),
-    MessageBox(Vec<MessageBoxLine>, ByteString, Option<RobotId>),
-}
-
 pub(crate) fn tick_game_loop(
     world: &mut World,
-    audio: &AudioEngine,
+    audio: &dyn AudioEngine,
     world_path: &Path,
     input_state: &InputState,
     counters: &mut Counters,
@@ -470,6 +453,7 @@ pub(crate) fn tick_game_loop(
     let key = convert_input(input_state);
     let result = process_input(
         &mut world.boards[*board_id],
+        &mut world.all_robots,
         &input_state,
         &mut world.state,
         accept_player_input,
@@ -589,7 +573,7 @@ pub(crate) fn tick_game_loop(
                         let movement = DOOR_FIRST_MOVEMENT[(param & 7) as usize];
                         // FIXME: support pushing
                         // FIXME: check for blocked, act appropriately.
-                        move_level(board, &pos, movement.0, movement.1, &mut *world.state.update_done);
+                        move_level(board, &mut world.all_robots, &pos, movement.0, movement.1, &mut *world.state.update_done);
                     }
                 }
 

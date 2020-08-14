@@ -26,7 +26,7 @@ use std::time::Duration;
 mod audio;
 mod board;
 mod game;
-mod robot;
+//mod robot;
 
 struct SdlRenderer<'a> {
     canvas: &'a mut Canvas<Window>,
@@ -53,12 +53,12 @@ impl<'a> Renderer for SdlRenderer<'a> {
 
 enum StateChange {
     PopCurrent(Option<PoppedData>),
-    Push(Box<GameState>),
-    Replace(Box<GameState>),
+    Push(Box<dyn GameState>),
+    Replace(Box<dyn GameState>),
 }
 
 enum PoppedData {
-    MessageBox(robot::RobotId, libmzx::ByteString),
+    MessageBox(libmzx::robot::RobotId, libmzx::ByteString),
     Scroll(Coordinate<u16>),
 }
 
@@ -101,7 +101,7 @@ trait GameState {
 }
 
 fn update_state(
-    states: &mut Vec<Box<GameState>>,
+    states: &mut Vec<Box<dyn GameState>>,
     change: Option<StateChange>,
     world: &mut World,
     board_id: &mut usize,
@@ -156,6 +156,7 @@ fn run(world_path: &Path, starting_board: Option<usize>, silent: bool) {
 
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem.window("revenge of megazeux", 640, 350)
+        .allow_highdpi()
       .position_centered()
       .build()
       .unwrap();
@@ -175,7 +176,7 @@ fn run(world_path: &Path, starting_board: Option<usize>, silent: bool) {
     let game_speed: u64 = 4;
 
     let mut states = vec![if starting_board.is_none() {
-        Box::new(TitleState(music.clone())) as Box<GameState>
+        Box::new(TitleState(music.clone())) as Box<dyn GameState>
     } else {
         Box::new(PlayState::new(music.clone(), starting_board)) as Box<PlayState>
     }];

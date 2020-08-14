@@ -10,7 +10,7 @@ log = "0.4"
 num-traits = "0.2"
 openmpt = { version = "0.3", path = "../openmpt-rs" }
 rand = "0.4"
-sdl2 = "0.31"
+sdl2 = "0.34"
 time = "0.1"
 
 [profile.dev]

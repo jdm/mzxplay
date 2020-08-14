@@ -1,3 +1,4 @@
+use libmzx::audio::AudioEngine;
 use openmpt::module::{Module, Logger};
 use sdl2::AudioSubsystem;
 use sdl2::audio::{AudioDevice, AudioSpecDesired, AudioCallback};
@@ -21,14 +22,6 @@ pub fn init_sdl(
     }).unwrap();
     device.resume();
     device
-}
-
-pub trait AudioEngine {
-    fn load_module(&self, file: &str);
-    fn mod_fade_in(&self, file: &str);
-    fn mod_fade_out(&self);
-    fn end_module(&self);
-    fn set_mod_order(&self, order: i32);
 }
 
 pub struct MusicData {
