@@ -593,7 +593,7 @@ pub(crate) fn tick_game_loop(
         }
 
         Some(InputResult::Shoot(dir)) => {
-            // TODO: ammo
+            // TODO: check world.state.ammo
             let board = &mut world.boards[*board_id];
             let adjusted = adjust_coordinate(board.player_pos, board, dir);
             if let Some(ref bullet_pos) = adjusted {
