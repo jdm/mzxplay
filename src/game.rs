@@ -468,23 +468,26 @@ pub(crate) fn tick_game_loop(
                     CardinalDirection::West => board.exits.3,
                 }
             };
-            if let Some(id) = id {
-                let old_player_pos = world.boards[*board_id].player_pos;
-                *board_id = id.0 as usize;
-                let board = &mut world.boards[*board_id];
-                let player_pos = match dir {
-                    CardinalDirection::North =>
-                        Coordinate(old_player_pos.0, board.height as u16 - 1),
-                    CardinalDirection::South =>
-                        Coordinate(old_player_pos.0, 0),
-                    CardinalDirection::East =>
-                        Coordinate(0, old_player_pos.1),
-                    CardinalDirection::West =>
-                        Coordinate(board.width as u16 - 1, old_player_pos.1),
-                };
-                enter_board(&mut world.state, audio, board, player_pos, &mut world.all_robots);
-            } else {
-                warn!("Edge of board with no exit.");
+            match id {
+                Some(id) if id.0 < world.boards.len() as u8 => {
+                    let old_player_pos = world.boards[*board_id].player_pos;
+                    *board_id = id.0 as usize;
+                    let board = &mut world.boards[*board_id];
+                    let player_pos = match dir {
+                        CardinalDirection::North =>
+                            Coordinate(old_player_pos.0, board.height as u16 - 1),
+                        CardinalDirection::South =>
+                            Coordinate(old_player_pos.0, 0),
+                        CardinalDirection::East =>
+                            Coordinate(0, old_player_pos.1),
+                        CardinalDirection::West =>
+                            Coordinate(board.width as u16 - 1, old_player_pos.1),
+                    };
+                    enter_board(&mut world.state, audio, board, player_pos, &mut world.all_robots);
+                }
+                _ => {
+                    warn!("Edge of board with no exit.");
+                }
             }
         }
 
