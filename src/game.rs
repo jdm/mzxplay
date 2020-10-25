@@ -635,6 +635,13 @@ pub(crate) fn tick_game_loop(
         &mut world.all_robots,
     );
 
+    // A robot could have moved the player.
+    if world.boards[*board_id].player_pos != orig_player_pos &&
+        !world.state.scroll_locked
+    {
+        reset_view(&mut world.boards[*board_id]);
+    }
+
     if let Some(change) = change {
         let new_board = match change {
             GameStateChange::Teleport(board, coord) => {
