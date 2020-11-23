@@ -185,7 +185,7 @@ fn run(world_path: &Path, starting_board: Option<usize>, silent: bool) {
     states[0].init(&mut world, &mut board_id);
 
     let mut counters = Counters::new();
-    let boards: Vec<_> = world.boards.iter().map(|b| b.title.clone()).collect();
+    let boards: Vec<_> = world.boards.iter().map(|(b, _)| b.title.clone()).collect();
 
     let mut last_input_state = InputState::default();
     'mainloop: loop {

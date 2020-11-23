@@ -23,17 +23,15 @@ fn render_game(
     is_title_screen: bool,
 ) {
     let mut renderer = SdlRenderer { canvas };
-    let robots_start = world.boards[board_id].robot_range.0;
-    let robots_end = robots_start + world.boards[board_id].robot_range.1;
-    let robots = &world.all_robots[robots_start..robots_end];
+    let (ref board, ref robots) = world.boards[board_id];
     render(
         &world.state,
         (
-            world.boards[board_id].upper_left_viewport,
-            world.boards[board_id].viewport_size,
+            board.upper_left_viewport,
+            board.viewport_size,
         ),
-        world.boards[board_id].scroll_offset,
-        &world.boards[board_id],
+        board.scroll_offset,
+        &board,
         robots,
         &mut renderer,
         is_title_screen,
@@ -43,13 +41,15 @@ fn render_game(
 pub(crate) struct TitleState(pub MusicCallback);
 impl GameState for TitleState {
     fn init(&mut self, world: &mut World, board_id: &mut usize) {
-        let player_pos = world.boards[*board_id].player_pos;
+        let (ref mut board, ref mut robots) = world.boards[*board_id];
+        let player_pos = board.player_pos;
         enter_board(
             &mut world.state,
             &self.0,
-            &mut world.boards[*board_id],
+            board,
             player_pos,
-            &mut world.all_robots,
+            robots,
+            &mut world.global_robot,
         );
     }
 
@@ -112,8 +112,9 @@ impl PlayState {
 impl GameState for PlayState {
     fn init(&mut self, world: &mut World, board_id: &mut usize) {
         *board_id = self.starting_board.unwrap_or(world.starting_board_number.0 as usize);
-        let pos = world.boards[*board_id].player_pos;
-        enter_board(&mut world.state, &self.music, &mut world.boards[*board_id], pos, &mut world.all_robots);
+        let (ref mut board, ref mut robots) = world.boards[*board_id];
+        let pos = board.player_pos;
+        enter_board(&mut world.state, &self.music, board, pos, robots, &mut world.global_robot);
         world.state.charset = world.state.initial_charset;
         world.state.palette = world.state.initial_palette.clone();
     }
@@ -121,16 +122,16 @@ impl GameState for PlayState {
     fn popped(&mut self, world: &mut World, board_id: usize, data: PoppedData) {
         match data {
             PoppedData::MessageBox(rid, label) => {
-                let mut robots = Robots::new(&mut world.boards[board_id], &mut world.all_robots);
+                let mut robots = Robots::new(&mut world.boards[board_id].1, &mut world.global_robot);
                 let robot = robots.get_mut(rid);
                 send_robot_to_label(robot, EvaluatedByteString::no_eval_needed(label));
 
             }
             PoppedData::Scroll(pos) => {
-                let board = &mut world.boards[board_id];
+                let (ref mut board, ref mut robots) = world.boards[board_id];
                 board.remove_thing_at(&pos);
                 let player = board.player_pos;
-                move_level_to(board, &mut world.all_robots, &player, &pos, &mut *world.state.update_done);
+                move_level_to(board, robots, &player, &pos, &mut *world.state.update_done);
                 board.player_pos = pos;
                 reset_view(board);
             }
@@ -447,12 +448,14 @@ pub(crate) fn tick_game_loop(
     board_id: &mut usize,
     accept_player_input: &mut bool,
 ) -> Option<StateChange> {
-    let orig_player_pos = world.boards[*board_id].player_pos;
+    let num_boards = world.boards.len();
+    let (ref mut board, ref mut robots) = world.boards[*board_id];
+    let orig_player_pos = board.player_pos;
 
     let key = convert_input(input_state);
     let result = process_input(
-        &mut world.boards[*board_id],
-        &mut world.all_robots,
+        board,
+        robots,
         &input_state,
         &mut world.state,
         accept_player_input,
@@ -460,7 +463,6 @@ pub(crate) fn tick_game_loop(
     match result {
         Some(InputResult::ExitBoard(dir)) => {
             let id = {
-                let board = &world.boards[*board_id];
                 match dir {
                     CardinalDirection::North => board.exits.0,
                     CardinalDirection::South => board.exits.1,
@@ -469,10 +471,9 @@ pub(crate) fn tick_game_loop(
                 }
             };
             match id {
-                Some(id) if id.0 < world.boards.len() as u8 => {
-                    let old_player_pos = world.boards[*board_id].player_pos;
+                Some(id) if id.0 < num_boards as u8 => {
+                    let old_player_pos = board.player_pos;
                     *board_id = id.0 as usize;
-                    let board = &mut world.boards[*board_id];
                     let player_pos = match dir {
                         CardinalDirection::North =>
                             Coordinate(old_player_pos.0, board.height as u16 - 1),
@@ -483,7 +484,7 @@ pub(crate) fn tick_game_loop(
                         CardinalDirection::West =>
                             Coordinate(board.width as u16 - 1, old_player_pos.1),
                     };
-                    enter_board(&mut world.state, audio, board, player_pos, &mut world.all_robots);
+                    enter_board(&mut world.state, audio, board, player_pos, robots, &mut world.global_robot);
                 }
                 _ => {
                     warn!("Edge of board with no exit.");
@@ -492,20 +493,20 @@ pub(crate) fn tick_game_loop(
         }
 
         Some(InputResult::Transport(id, color, dest_board_id)) => {
-            let dest_board = &mut world.boards[dest_board_id as usize];
+            let (ref mut dest_board, ref mut robots) = &mut world.boards[dest_board_id as usize];
             let coord = dest_board.find(id, color).unwrap_or(dest_board.player_pos);
             *board_id = dest_board_id as usize;
-            enter_board(&mut world.state, audio, dest_board, coord, &mut world.all_robots);
+            enter_board(&mut world.state, audio, dest_board, coord, robots, &mut world.global_robot);
         }
 
         Some(InputResult::Collide(pos)) => {
-            let board = &mut world.boards[*board_id];
+            let (ref mut board, ref mut robots) = &mut world.boards[*board_id];
             let (_id, color, param) = *board.level_at(&pos);
             let thing = board.thing_at(&pos);
             match thing {
                 Thing::Robot | Thing::RobotPushable => {
                     let robot_id = RobotId::from(param);
-                    let mut robots = Robots::new(board, &mut world.all_robots);
+                    let mut robots = Robots::new(robots, &mut world.global_robot);
                     let robot = robots.get_mut(robot_id);
                     send_robot_to_label(robot, BuiltInLabel::Touch);
                 }
@@ -575,7 +576,7 @@ pub(crate) fn tick_game_loop(
                         let movement = DOOR_FIRST_MOVEMENT[(param & 7) as usize];
                         // FIXME: support pushing
                         // FIXME: check for blocked, act appropriately.
-                        move_level(board, &mut world.all_robots, &pos, movement.0, movement.1, &mut *world.state.update_done);
+                        move_level(board, robots, &pos, movement.0, movement.1, &mut *world.state.update_done);
                     }
                 }
 
@@ -588,8 +589,7 @@ pub(crate) fn tick_game_loop(
             let mut name = b"key".to_vec();
             name.push(k);
             let label = ByteString::from(name);
-            let board = &world.boards[*board_id];
-            let mut robots = Robots::new(board, &mut world.all_robots);
+            let mut robots = Robots::new(&mut world.boards[*board_id].1, &mut world.global_robot);
             robots.foreach(|robot, _id| {
                 send_robot_to_label(robot, EvaluatedByteString::no_eval_needed(label.clone()));
             });
@@ -597,7 +597,7 @@ pub(crate) fn tick_game_loop(
 
         Some(InputResult::Shoot(dir)) => {
             // TODO: check world.state.ammo
-            let board = &mut world.boards[*board_id];
+            let board = &mut world.boards[*board_id].0;
             let adjusted = adjust_coordinate(board.player_pos, board, dir);
             if let Some(ref bullet_pos) = adjusted {
                 // FIXME: shoot blocking object at initial position instead of overwriting
@@ -617,10 +617,11 @@ pub(crate) fn tick_game_loop(
         None => (),
     }
 
-    if world.boards[*board_id].player_pos != orig_player_pos &&
+    let (ref mut board, ref mut robots) = world.boards[*board_id];
+    if board.player_pos != orig_player_pos &&
         !world.state.scroll_locked
     {
-        reset_view(&mut world.boards[*board_id]);
+        reset_view(board);
     }
 
     let change = update_board(
@@ -630,22 +631,23 @@ pub(crate) fn tick_game_loop(
         world_path,
         counters,
         boards,
-        &mut world.boards[*board_id],
+        board,
         *board_id,
-        &mut world.all_robots,
+        robots,
+        &mut world.global_robot,
     );
 
     // A robot could have moved the player.
-    if world.boards[*board_id].player_pos != orig_player_pos &&
+    if board.player_pos != orig_player_pos &&
         !world.state.scroll_locked
     {
-        reset_view(&mut world.boards[*board_id]);
+        reset_view(board);
     }
 
     if let Some(change) = change {
         let new_board = match change {
             GameStateChange::Teleport(board, coord) => {
-                let id = world.boards.iter().position(|b| b.title == board);
+                let id = world.boards.iter().position(|(b, _)| b.title == board);
                 if let Some(id) = id {
                     Some((id, coord))
                 } else {
@@ -665,7 +667,8 @@ pub(crate) fn tick_game_loop(
         };
         if let Some((id, coord)) = new_board {
             *board_id = id;
-            enter_board(&mut world.state, audio, &mut world.boards[id], coord, &mut world.all_robots);
+            let (ref mut board, ref mut robots) = world.boards[id];
+            enter_board(&mut world.state, audio, board, coord, robots, &mut world.global_robot);
         }
     }
 
