@@ -474,6 +474,7 @@ pub(crate) fn tick_game_loop(
                 Some(id) if id.0 < num_boards as u8 => {
                     let old_player_pos = board.player_pos;
                     *board_id = id.0 as usize;
+                    let (ref mut board, ref mut robots) = world.boards[*board_id];
                     let player_pos = match dir {
                         CardinalDirection::North =>
                             Coordinate(old_player_pos.0, board.height as u16 - 1),
