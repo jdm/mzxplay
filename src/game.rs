@@ -411,7 +411,7 @@ fn process_input(
         (player_pos.1 as i16 + ydiff as i16) as u16
     );
     if new_player_pos != player_pos {
-        let thing = board.thing_at(&new_player_pos);
+        let thing = board.thing_at(&new_player_pos).unwrap();
         if thing.is_pushable() {
             if let Some(pushed_pos) = adjust_coordinate_diff(new_player_pos, board, xdiff as i16, ydiff as i16) {
                 move_level_to(board, robots, &new_player_pos, &pushed_pos, &mut *world_state.update_done);
@@ -428,9 +428,9 @@ fn process_input(
 
         // FIXME: move this to the start of the game update loop so that a frame is
         //        rendered with the player on top of the transport.
-        let under_thing = board.under_thing_at(&board.player_pos);
+        let under_thing = board.under_thing_at(&board.player_pos).unwrap();
         if under_thing.is_teleporter() {
-            let &(under_id, under_color, under_param) = board.under_at(&board.player_pos);
+            let &(under_id, under_color, under_param) = board.under_at(&board.player_pos).unwrap();
             return Some(InputResult::Transport(under_id, under_color, under_param));
         }
     }
@@ -502,8 +502,8 @@ pub(crate) fn tick_game_loop(
 
         Some(InputResult::Collide(pos)) => {
             let (ref mut board, ref mut robots) = &mut world.boards[*board_id];
-            let (_id, color, param) = *board.level_at(&pos);
-            let thing = board.thing_at(&pos);
+            let (_id, color, param) = *board.level_at(&pos).unwrap();
+            let thing = board.thing_at(&pos).unwrap();
             match thing {
                 Thing::Robot | Thing::RobotPushable => {
                     let robot_id = RobotId::from(param);
@@ -537,7 +537,7 @@ pub(crate) fn tick_game_loop(
                     let mut unlocked = param == 0;
                     if !unlocked {
                         if world.state.take_key(color & 0x0F).is_ok() {
-                            board.level_at_mut(&pos).2 = 0;
+                            board.level_at_mut(&pos).unwrap().2 = 0;
                             board.set_message_line("You unlock and open the gate.".into());
                             unlocked = true;
                         } else {
@@ -545,7 +545,7 @@ pub(crate) fn tick_game_loop(
                         }
                     }
                     if unlocked {
-                        let (ref mut id, _, ref mut param) = board.level_at_mut(&pos);
+                        let (ref mut id, _, ref mut param) = board.level_at_mut(&pos).unwrap();
                         *id = Thing::OpenGate.to_u8().unwrap();
                         *param = 22;
                     }
@@ -559,7 +559,7 @@ pub(crate) fn tick_game_loop(
                     let mut unlocked = status == DoorStatus::Unlocked;
                     if !unlocked {
                         if world.state.take_key(color & 0x0F).is_ok() {
-                            board.level_at_mut(&pos).2 = param_from_door(orientation, dir, DoorStatus::Unlocked);
+                            board.level_at_mut(&pos).unwrap().2 = param_from_door(orientation, dir, DoorStatus::Unlocked);
                             board.set_message_line("You unlock and open the door.".into());
                             unlocked = true;
 
@@ -570,7 +570,7 @@ pub(crate) fn tick_game_loop(
 
                     if unlocked {
                         {
-                            let (ref mut id, _, ref mut param) = board.level_at_mut(&pos);
+                            let (ref mut id, _, ref mut param) = board.level_at_mut(&pos).unwrap();
                             *id = Thing::OpenDoor.to_u8().unwrap();
                             *param = *param & 7;
                         }
@@ -602,7 +602,7 @@ pub(crate) fn tick_game_loop(
             let adjusted = adjust_coordinate(board.player_pos, board, dir);
             if let Some(ref bullet_pos) = adjusted {
                 // FIXME: shoot blocking object at initial position instead of overwriting
-                if !board.thing_at(bullet_pos).is_solid() {                
+                if !board.thing_at(bullet_pos).unwrap().is_solid() {
                     put_at(
                         board,
                         bullet_pos,
