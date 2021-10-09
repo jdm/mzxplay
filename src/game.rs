@@ -50,6 +50,7 @@ impl GameState for TitleState {
             player_pos,
             robots,
             &mut world.global_robot,
+            LabelAction::Nothing,
         );
     }
 
@@ -114,7 +115,7 @@ impl GameState for PlayState {
         *board_id = self.starting_board.unwrap_or(world.starting_board_number.0 as usize);
         let (ref mut board, ref mut robots) = world.boards[*board_id];
         let pos = board.player_pos;
-        enter_board(&mut world.state, &self.music, board, pos, robots, &mut world.global_robot);
+        enter_board(&mut world.state, &self.music, board, pos, robots, &mut world.global_robot, LabelAction::RunJustLoadedAndJustEntered);
         world.state.charset = world.state.initial_charset;
         world.state.palette = world.state.initial_palette.clone();
     }
@@ -485,7 +486,7 @@ pub(crate) fn tick_game_loop(
                         CardinalDirection::West =>
                             Coordinate(board.width as u16 - 1, old_player_pos.1),
                     };
-                    enter_board(&mut world.state, audio, board, player_pos, robots, &mut world.global_robot);
+                    enter_board(&mut world.state, audio, board, player_pos, robots, &mut world.global_robot, LabelAction::RunJustEntered);
                 }
                 _ => {
                     warn!("Edge of board with no exit.");
@@ -497,7 +498,7 @@ pub(crate) fn tick_game_loop(
             let (ref mut dest_board, ref mut robots) = &mut world.boards[dest_board_id as usize];
             let coord = dest_board.find(id, color).unwrap_or(dest_board.player_pos);
             *board_id = dest_board_id as usize;
-            enter_board(&mut world.state, audio, dest_board, coord, robots, &mut world.global_robot);
+            enter_board(&mut world.state, audio, dest_board, coord, robots, &mut world.global_robot, LabelAction::RunJustEntered);
         }
 
         Some(InputResult::Collide(pos)) => {
