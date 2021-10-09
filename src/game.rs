@@ -129,9 +129,9 @@ impl GameState for PlayState {
             }
             PoppedData::Scroll(pos) => {
                 let (ref mut board, ref mut robots) = world.boards[board_id];
-                board.remove_thing_at(&pos);
+                board.remove_thing_at(&pos).unwrap();
                 let player = board.player_pos;
-                move_level_to(board, robots, &player, &pos, &mut *world.state.update_done);
+                move_level_to(board, robots, &player, &pos, &mut *world.state.update_done).unwrap();
                 board.player_pos = pos;
                 reset_view(board);
             }
@@ -414,7 +414,7 @@ fn process_input(
         let thing = board.thing_at(&new_player_pos).unwrap();
         if thing.is_pushable() {
             if let Some(pushed_pos) = adjust_coordinate_diff(new_player_pos, board, xdiff as i16, ydiff as i16) {
-                move_level_to(board, robots, &new_player_pos, &pushed_pos, &mut *world_state.update_done);
+                move_level_to(board, robots, &new_player_pos, &pushed_pos, &mut *world_state.update_done).unwrap();
             } else {
                 return Some(InputResult::Collide(new_player_pos));
             }
@@ -423,7 +423,7 @@ fn process_input(
         }
         // FIXME: figure out what kind of delay makes sense for accepting player movement.
         //*allow_move_player = false;
-        move_level(board, robots, &player_pos, xdiff, ydiff, &mut *world_state.update_done);
+        move_level(board, robots, &player_pos, xdiff, ydiff, &mut *world_state.update_done).unwrap();
         board.player_pos = new_player_pos;
 
         // FIXME: move this to the start of the game update loop so that a frame is
@@ -577,7 +577,7 @@ pub(crate) fn tick_game_loop(
                         let movement = DOOR_FIRST_MOVEMENT[(param & 7) as usize];
                         // FIXME: support pushing
                         // FIXME: check for blocked, act appropriately.
-                        move_level(board, robots, &pos, movement.0, movement.1, &mut *world.state.update_done);
+                        move_level(board, robots, &pos, movement.0, movement.1, &mut *world.state.update_done).unwrap();
                     }
                 }
 
@@ -610,7 +610,7 @@ pub(crate) fn tick_game_loop(
                         Thing::Bullet,
                         bullet_param(BulletType::Player, dir),
                         &mut *world.state.update_done,
-                    );
+                    ).unwrap();
                 }
             }
         }
