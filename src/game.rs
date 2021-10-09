@@ -1,14 +1,14 @@
 use crate::{GameState, PoppedData, StateChange, SdlRenderer};
 use crate::audio::MusicCallback;
 use libmzx::audio::AudioEngine;
-use libmzx::board::{enter_board, update_board};
+use libmzx::board::{enter_board, run_board_update};
 use libmzx::robot::{Robots, RobotId, BuiltInLabel, EvaluatedByteString, send_robot_to_label};
 use libmzx::{
     World, Board, Thing, CardinalDirection, Coordinate, Counters, ByteString, KeyPress, WorldState,
     render, draw_messagebox, MessageBoxLine, DoorStatus, door_from_param, param_from_door,
     bullet_param, BulletType, adjust_coordinate, MessageBoxLineType, Robot, adjust_coordinate_diff,
 };
-use libmzx::board::{NORTH, SOUTH, EAST, WEST, GameStateChange, move_level, put_at, move_level_to, reset_view};
+use libmzx::board::{NORTH, SOUTH, EAST, WEST, ExternalStateChange, LabelAction, move_level, put_at, move_level_to, reset_view};
 use num_traits::ToPrimitive;
 use sdl2::event::Event;
 use sdl2::keyboard::{Keycode, Mod};
@@ -618,62 +618,31 @@ pub(crate) fn tick_game_loop(
         None => (),
     }
 
-    let (ref mut board, ref mut robots) = world.boards[*board_id];
+    let (ref mut board, _) = world.boards[*board_id];
     if board.player_pos != orig_player_pos &&
         !world.state.scroll_locked
     {
         reset_view(board);
     }
 
-    let change = update_board(
-        &mut world.state,
+    let change = run_board_update(
+        world,
         audio,
-        key,
         world_path,
         counters,
         boards,
-        board,
-        *board_id,
-        robots,
-        &mut world.global_robot,
+        board_id,
+        key,
     );
 
-    // A robot could have moved the player.
-    if board.player_pos != orig_player_pos &&
-        !world.state.scroll_locked
-    {
-        reset_view(board);
-    }
-
-    if let Some(change) = change {
-        let new_board = match change {
-            GameStateChange::Teleport(board, coord) => {
-                let id = world.boards.iter().position(|(b, _)| b.title == board);
-                if let Some(id) = id {
-                    Some((id, coord))
-                } else {
-                    warn!("Couldn't find board {:?}", board);
-                    None
-                }
-            }
-            GameStateChange::Restore(id, coord) => {
-                Some((id, coord))
-            }
-
-            GameStateChange::MessageBox(lines, title, rid) => {
-                return Some(StateChange::Push(Box::new(
-                    MessageBoxState::new(title, lines, MessageBoxSource::Robot(rid))
-                )));
-            }
-        };
-        if let Some((id, coord)) = new_board {
-            *board_id = id;
-            let (ref mut board, ref mut robots) = world.boards[id];
-            enter_board(&mut world.state, audio, board, coord, robots, &mut world.global_robot);
+    match change {
+        Some(ExternalStateChange::MessageBox(lines, title, rid)) => {
+            Some(StateChange::Push(Box::new(
+                MessageBoxState::new(title, lines, MessageBoxSource::Robot(rid))
+            )))
         }
+        None => None,
     }
-
-    None
 }
 
 enum MessageBoxSource {
