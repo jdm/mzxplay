@@ -2,6 +2,7 @@ use crate::{GameState, PoppedData, StateChange, SdlRenderer};
 use crate::audio::MusicCallback;
 use libmzx::audio::AudioEngine;
 use libmzx::board::{enter_board, run_board_update};
+use libmzx::keyboard::Key;
 use libmzx::robot::{Robots, RobotId, BuiltInLabel, EvaluatedByteString, send_robot_to_label};
 use libmzx::{
     World, Board, Thing, CardinalDirection, Coordinate, Counters, ByteString, KeyPress, WorldState,
@@ -339,6 +340,54 @@ fn keycode_to_key(keycode: Keycode) -> Option<u8> {
     })
 }
 
+fn key_from_keycode(keycode: Keycode) -> Option<Key> {
+    Some(match keycode {
+        Keycode::A => Key::A,
+        Keycode::B => Key::B,
+        Keycode::C => Key::C,
+        Keycode::D => Key::D,
+        Keycode::E => Key::E,
+        Keycode::F => Key::F,
+        Keycode::G => Key::G,
+        Keycode::H => Key::H,
+        Keycode::I => Key::I,
+        Keycode::J => Key::J,
+        Keycode::K => Key::K,
+        Keycode::L => Key::L,
+        Keycode::M => Key::M,
+        Keycode::N => Key::N,
+        Keycode::O => Key::O,
+        Keycode::P => Key::P,
+        Keycode::Q => Key::Q,
+        Keycode::R => Key::R,
+        Keycode::S => Key::S,
+        Keycode::T => Key::T,
+        Keycode::U => Key::U,
+        Keycode::V => Key::V,
+        Keycode::W => Key::W,
+        Keycode::X => Key::X,
+        Keycode::Y => Key::Y,
+        Keycode::Z => Key::Z,
+        Keycode::Num0 => Key::Num0,
+        Keycode::Num1 => Key::Num1,
+        Keycode::Num2 => Key::Num2,
+        Keycode::Num3 => Key::Num3,
+        Keycode::Num4 => Key::Num4,
+        Keycode::Num5 => Key::Num5,
+        Keycode::Num6 => Key::Num6,
+        Keycode::Num7 => Key::Num7,
+        Keycode::Num8 => Key::Num8,
+        Keycode::Num9 => Key::Num9,
+        Keycode::Left => Key::Left,
+        Keycode::Right => Key::Right,
+        Keycode::Up => Key::Up,
+        Keycode::Down => Key::Down,
+        Keycode::Space => Key::Space,
+        Keycode::Return => Key::Return,
+        _ => return None,
+    })
+}
+
 fn process_input(
     board: &mut Board,
     robots: &mut [Robot],
@@ -346,7 +395,7 @@ fn process_input(
     world_state: &mut WorldState,
     allow_move_player: &mut bool,
 ) -> Option<InputResult> {
-    world_state.key_pressed = input_state.pressed_keycode.map_or(0, |k| k as i32);
+    world_state.key_pressed = input_state.pressed_keycode.and_then(key_from_keycode);
 
     if let Some(key) = input_state.pressed_keycode.and_then(|k| keycode_to_key(k)) {
         return Some(InputResult::KeyLabel(key));
